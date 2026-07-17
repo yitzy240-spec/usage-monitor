@@ -22,24 +22,11 @@ const CLAWD = [
     '..#.#..#.#..',
 ];
 
-// An original purple blossom-bot cousin for Codex, same pixel family.
-const CODEX_BOT = [
-    '...######...',
-    '.##########.',
-    '.##O####O##.',
-    '############',
-    '.##########.',
-    '...######...',
-    '..#.#..#.#..',
-    '..#.#..#.#..',
-];
-
 const SPRITES = {
     claude: { map: CLAWD, palette: { '#': '#DA7758', 'O': '#16130E' } },
-    codex: { map: CODEX_BOT, palette: { '#': '#A78BFA', 'O': '#16130E' } },
 };
 
-// Eyes-closed variant for the idle blink (eyes live on row 1 or 2).
+// Eyes-closed variant for the idle blink.
 function blinkFrame(map) {
     return map.map((row) => row.replaceAll('O', '#'));
 }
@@ -59,15 +46,11 @@ function mapToShadow(map, palette) {
 function startBlink() {
     if (blinkTimer) clearInterval(blinkTimer);
     blinkTimer = setInterval(() => {
-        for (const [key, sprite] of Object.entries(SPRITES)) {
-            const el = els[`${key}Sprite`];
-            if (el) el.style.boxShadow = mapToShadow(blinkFrame(sprite.map), sprite.palette);
-        }
+        els.claudeSprite.style.boxShadow = mapToShadow(blinkFrame(CLAWD), SPRITES.claude.palette);
+        els.codexSprite.src = 'codex-pet-1.png';
         setTimeout(() => {
-            for (const [key, sprite] of Object.entries(SPRITES)) {
-                const el = els[`${key}Sprite`];
-                if (el) el.style.boxShadow = mapToShadow(sprite.map, sprite.palette);
-            }
+            els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
+            els.codexSprite.src = 'codex-pet-0.png';
         }, 140);
     }, 3200);
 }
@@ -84,11 +67,10 @@ function severityColor(pct, thresholds) {
     return 'var(--ink)';
 }
 
-// Bars fill in the provider's brand color; red means trouble - critical
-// level or usage running ahead of the elapsed-time marker (fast drain).
+// Bars always fill in the provider's brand color - risk is signalled by
+// the peak number, the sprite mood, and the elapsed-time marker instead,
+// so a full bar never gets confused with a different provider's hue.
 function barColor(bar, thresholds, brand) {
-    const [, hi] = thresholds;
-    if (bar.warn || bar.fill_pct * 100 >= hi) return 'var(--crit)';
     return brand;
 }
 
@@ -243,9 +225,7 @@ function init(config) {
         if (e.key === 'Escape') pywebview.api.close();
     });
 
-    for (const [key, sprite] of Object.entries(SPRITES)) {
-        els[`${key}Sprite`].style.boxShadow = mapToShadow(sprite.map, sprite.palette);
-    }
+    els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
     startBlink();
     setPinned(false);
     updateData(config.data);

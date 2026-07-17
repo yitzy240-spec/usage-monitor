@@ -11,7 +11,7 @@
     --codex: #A78BFA;
     --ok: #A9BE7B;
     --warn: #E5B567;
-    --crit: #E06C5B;
+    --crit: #F03E3E;
     --track: rgba(240, 238, 229, 0.09);
     --hairline: rgba(240, 238, 229, 0.10);
     --mono: 'Cascadia Mono', Consolas, monospace;
@@ -126,6 +126,19 @@ header {
    Its mood classes live on the .provider section, so each mascot only
    worries about its own subscription. */
 .sprite-box { position: relative; width: 36px; height: 26px; flex: none; }
+.sprite-box-codex { width: 28px; height: 30px; }
+
+/* The official Codex companion (frames from the Codex CLI pets CDN). */
+.sprite-img {
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 30px;
+    width: auto;
+    image-rendering: pixelated;
+    animation: idle-bob 2.4s ease-in-out infinite;
+}
+
+.provider.mood-panic .sprite-img { animation: panic-shake 0.35s steps(2) infinite; }
 
 .sprite {
     position: absolute;
