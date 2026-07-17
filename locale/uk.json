@@ -68,5 +68,6 @@
     "already_running": "Usage Monitor for Claude v{running_version} вже запущено.\n\nБажаєте замінити запущений екземпляр?",
     "replace_failed": "Не вдалося замінити запущений екземпляр.\n\nЗакрийте його вручну та спробуйте ще раз.",
     "codex": "Codex",
-    "codex_login_hint": "Sign in with: codex login"
+    "codex_login_hint": "Sign in with: codex login",
+    "settings_menu": "Settings..."
 }

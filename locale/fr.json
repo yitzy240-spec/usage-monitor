@@ -68,5 +68,6 @@
     "already_running": "Usage Monitor for Claude v{running_version} est déjà en cours d'exécution.\n\nVoulez-vous remplacer l'instance en cours ?",
     "replace_failed": "L'instance en cours n'a pas pu être remplacée.\n\nVeuillez la fermer manuellement et réessayer.",
     "codex": "Codex",
-    "codex_login_hint": "Sign in with: codex login"
+    "codex_login_hint": "Sign in with: codex login",
+    "settings_menu": "Settings..."
 }

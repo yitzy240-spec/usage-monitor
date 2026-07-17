@@ -27,6 +27,7 @@ from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
 from .instance_id import effective_config_dir, is_default_config_dir
 from .hud import UsageHud
+from .setup_ui import SetupWindow, should_show_onboarding
 from .settings import (
     ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, CODEX_ENABLED, HUD_ENABLED, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_DOUBLE_CLICK_COMMAND, ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
@@ -123,6 +124,10 @@ class UsageMonitorForClaude:
         # Hold-to-peek HUD (global hotkey)
         self.hud: UsageHud | None = UsageHud(self) if HUD_ENABLED else None
 
+        # Setup/settings window (single instance)
+        self._setup_lock = threading.Lock()
+        self._setup_open = False
+
         # Notification state
         self._prev_utilization: dict[str, float] = {}
         self._prev_account_uuid: str | None = None
@@ -158,6 +163,7 @@ class UsageMonitorForClaude:
             title=self._tooltip_prefix + T['loading'],
             menu=pystray.Menu(
                 pystray.MenuItem(T['menu_show'], self.on_show_popup, default=True),
+                pystray.MenuItem(T['settings_menu'], self.on_open_setup),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     T['autostart'], self.on_toggle_autostart,
@@ -205,6 +211,23 @@ class UsageMonitorForClaude:
 
     def on_toggle_autostart(self, icon: Any = None, item: Any = None) -> None:
         set_autostart(not is_autostart_enabled())
+
+    def on_open_setup(self, icon: Any = None, item: Any = None) -> None:
+        self._open_setup('settings')
+
+    def _open_setup(self, mode: str) -> None:
+        with self._setup_lock:
+            if self._setup_open:
+                return
+            self._setup_open = True
+
+        def _run() -> None:
+            try:
+                SetupWindow(self, mode=mode)
+            finally:
+                self._setup_open = False
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def on_restart(self, icon: Any = None, item: Any = None) -> None:
         self.restart_requested = True
@@ -1034,6 +1057,8 @@ class UsageMonitorForClaude:
                 self.codex.start()
             if self.hud is not None:
                 self.hud.start()
+            if should_show_onboarding():
+                self._open_setup('onboarding')
             self.poll_loop()
         except Exception:
             crash_log(traceback.format_exc())

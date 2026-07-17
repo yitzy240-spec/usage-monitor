@@ -68,5 +68,6 @@
     "already_running": "Usage Monitor for Claude v{running_version} sudah berjalan.\n\nApakah Anda ingin mengganti instans yang sedang berjalan?",
     "replace_failed": "Instans yang sedang berjalan tidak dapat digantikan.\n\nSilakan tutup secara manual lalu coba lagi.",
     "codex": "Codex",
-    "codex_login_hint": "Sign in with: codex login"
+    "codex_login_hint": "Sign in with: codex login",
+    "settings_menu": "Settings..."
 }

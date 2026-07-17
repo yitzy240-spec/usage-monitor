@@ -68,5 +68,6 @@
     "already_running": "Usage Monitor for Claude v{running_version} è già in esecuzione.\n\nVuoi sostituire l'istanza in esecuzione?",
     "replace_failed": "Non è stato possibile sostituire l'istanza in esecuzione.\n\nChiudila manualmente e riprova.",
     "codex": "Codex",
-    "codex_login_hint": "Sign in with: codex login"
+    "codex_login_hint": "Sign in with: codex login",
+    "settings_menu": "Settings..."
 }

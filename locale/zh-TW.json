@@ -68,5 +68,6 @@
     "already_running": "Usage Monitor for Claude v{running_version} 已在執行中。\n\n是否要取代正在執行的執行個體？",
     "replace_failed": "無法取代正在執行的執行個體。\n\n請手動關閉後再試一次。",
     "codex": "Codex",
-    "codex_login_hint": "Sign in with: codex login"
+    "codex_login_hint": "Sign in with: codex login",
+    "settings_menu": "Settings..."
 }

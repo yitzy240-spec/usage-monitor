@@ -37,7 +37,7 @@ __all__ = [
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
     'POLL_ERROR', 'POLL_FAST', 'POLL_FAST_EXTRA', 'POLL_INTERVAL',
     'POPUP_FIELDS', 'SETTINGS_FILENAME', 'TIME_FORMAT', 'TOOLTIP_FIELDS',
-    'get_alert_thresholds',
+    'get_alert_thresholds', 'settings_write_path',
 ]
 
 SETTINGS_FILENAME = 'usage-monitor-settings.json'
@@ -104,6 +104,30 @@ def _load_settings() -> dict:
                 return {}
 
     return {}
+
+
+def settings_write_path() -> Path:
+    """Return the settings file the setup UI should write.
+
+    The first existing file in the load order wins (so edits land where the
+    user already keeps their settings); otherwise the exe-adjacent (frozen)
+    or project-root location is used, mirroring ``_load_settings``.
+    """
+    if getattr(sys, 'frozen', False):
+        app_dir = Path(sys.executable).parent
+    else:
+        app_dir = Path(__file__).resolve().parent.parent
+
+    search_paths = []
+    if not is_default_config_dir():
+        search_paths.append(effective_config_dir() / SETTINGS_FILENAME)
+    search_paths.append(app_dir / SETTINGS_FILENAME)
+    search_paths.append(Path.home() / '.claude' / SETTINGS_FILENAME)
+
+    for path in search_paths:
+        if path.is_file():
+            return path
+    return app_dir / SETTINGS_FILENAME
 
 
 def _valid_rgba(value: object) -> bool:

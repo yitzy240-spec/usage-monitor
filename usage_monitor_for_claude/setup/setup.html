@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="setup.css">
+</head>
+<body>
+<main id="page">
+    <header>
+        <span id="wordmark">usage</span>
+        <span id="subtitle"></span>
+    </header>
+
+    <!-- Onboarding: welcome -->
+    <section class="step" id="stepWelcome">
+        <h1>Welcome 👋</h1>
+        <p>One tray app for your <b>Claude</b> and <b>Codex</b> subscription limits — with a hold-to-peek HUD.</p>
+        <p class="dim">No API keys, no sign-up: it reads the logins your <span class="mono">claude</span> and <span class="mono">codex</span> CLIs already have.</p>
+        <div class="actions"><button class="primary" data-next="stepAccounts">Get started</button></div>
+    </section>
+
+    <!-- Accounts (shared between wizard + settings) -->
+    <section class="step" id="stepAccounts">
+        <h1>Accounts</h1>
+        <div class="account" id="accClaude">
+            <div class="account-head">
+                <span class="acc-dot"></span>
+                <span class="acc-name">Claude</span>
+                <span class="acc-status"></span>
+            </div>
+            <p class="dim acc-help">Sign in by running <span class="mono">claude</span> in a terminal (Claude Code). The tray app reuses that login.</p>
+            <div class="acc-actions">
+                <button data-login="claude">Open terminal</button>
+            </div>
+        </div>
+        <div class="account" id="accCodex">
+            <div class="account-head">
+                <span class="acc-dot"></span>
+                <span class="acc-name">Codex</span>
+                <span class="acc-status"></span>
+            </div>
+            <p class="dim acc-help">Sign in with <span class="mono">codex login</span>. Optional — skip it and the Codex section simply stays hidden.</p>
+            <div class="acc-actions">
+                <button data-login="codex">Open terminal</button>
+            </div>
+        </div>
+        <div class="actions">
+            <button id="recheckBtn">Re-check</button>
+            <button class="primary wizard-only" data-next="stepPrefs">Continue</button>
+        </div>
+    </section>
+
+    <!-- Preferences (shared) -->
+    <section class="step" id="stepPrefs">
+        <h1>Preferences</h1>
+
+        <label class="field">
+            <span>Summon hotkey</span>
+            <input type="text" id="hotkeyInput" spellcheck="false">
+            <small class="dim">Modifiers + one key, e.g. <span class="mono">ctrl+alt+space</span> or <span class="mono">win+u</span></small>
+            <small class="error" id="hotkeyError">That hotkey can't be parsed.</small>
+        </label>
+
+        <label class="field">
+            <span>Linger after release <b id="lingerVal"></b></span>
+            <input type="range" id="lingerInput" min="0" max="30" step="1">
+            <small class="dim">Seconds the HUD stays up after you release the keys (0 = hide instantly). Hovering pauses it.</small>
+        </label>
+
+        <div class="field-row">
+            <label class="check"><input type="checkbox" id="sessionsInput"> <span>Show session context rings</span></label>
+            <label class="check"><input type="checkbox" id="codexInput"> <span>Codex section</span></label>
+            <label class="check" id="autostartField"><input type="checkbox" id="autostartInput"> <span>Start with Windows</span></label>
+        </div>
+
+        <div class="actions">
+            <button class="wizard-only" data-next="stepAccounts">Back</button>
+            <button class="primary wizard-only" id="wizardSaveBtn">Finish</button>
+            <button class="primary settings-only" id="saveBtn">Save</button>
+        </div>
+        <small class="dim" id="savePath"></small>
+    </section>
+
+    <!-- Onboarding: done -->
+    <section class="step" id="stepDone">
+        <h1>You're set ✨</h1>
+        <p>Hold <b class="mono" id="doneHotkey"></b> any time to peek at your usage. Tap it to keep the HUD up, use the pin for sticky mode, click the tray icon for details.</p>
+        <p class="dim" id="restartNote">Settings saved. Restart the app now to apply them.</p>
+        <div class="actions">
+            <button id="laterBtn">Later</button>
+            <button class="primary" id="restartBtn">Restart now</button>
+        </div>
+    </section>
+</main>
+<script src="setup.js"></script>
+</body>
+</html>
