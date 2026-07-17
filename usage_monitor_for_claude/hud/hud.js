@@ -148,7 +148,48 @@ function renderProvider(key, provider, thresholds, brand) {
     errorEl.style.display = provider.error ? 'block' : 'none';
 }
 
-// Context-window fill of active Claude Code sessions ("fbcr · 432k 43%").
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// One circular context gauge: ring fill = window occupancy, % centered.
+function contextRing(pct, thresholds, brand) {
+    const size = 30, r = 12, c = 2 * Math.PI * r;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'ctx-ring');
+    svg.setAttribute('width', size);
+    svg.setAttribute('height', size);
+    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+
+    for (const cls of ['ring-track', 'ring-fill']) {
+        const circle = document.createElementNS(SVG_NS, 'circle');
+        circle.setAttribute('class', cls);
+        circle.setAttribute('cx', size / 2);
+        circle.setAttribute('cy', size / 2);
+        circle.setAttribute('r', r);
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke-width', 3.5);
+        if (cls === 'ring-fill') {
+            circle.setAttribute('stroke-linecap', 'round');
+            circle.setAttribute('stroke-dasharray', c);
+            circle.setAttribute('stroke-dashoffset', c * (1 - Math.min(pct, 100) / 100));
+            circle.setAttribute('transform', `rotate(-90 ${size / 2} ${size / 2})`);
+            circle.style.setProperty('--ring-color', pct >= thresholds[1] ? 'var(--crit)' : brand);
+        }
+        svg.appendChild(circle);
+    }
+
+    const label = document.createElementNS(SVG_NS, 'text');
+    label.setAttribute('class', 'ring-pct');
+    label.setAttribute('x', size / 2);
+    label.setAttribute('y', size / 2);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('dominant-baseline', 'central');
+    label.textContent = `${pct}`;
+    svg.appendChild(label);
+
+    return svg;
+}
+
+// Context-window fill of active Claude Code sessions, as ring gauges.
 function renderContext(container, sessions, thresholds, brand) {
     container.classList.toggle('visible', !!sessions.length);
     if (!sessions.length) {
@@ -158,34 +199,26 @@ function renderContext(container, sessions, thresholds, brand) {
 
     const heading = document.createElement('div');
     heading.className = 'ctx-heading';
-    heading.textContent = 'context';
+    heading.textContent = 'ctx';
 
     container.replaceChildren(heading, ...sessions.map((s) => {
-        const row = document.createElement('div');
-        row.className = 'ctx-row';
+        const item = document.createElement('div');
+        item.className = 'ctx-item';
+        const tokens = s.tokens >= 1000 ? `${Math.round(s.tokens / 1000)}k` : `${s.tokens}`;
+        item.title = `${s.name} — ${tokens} of ${Math.round(s.limit / 1000)}k (${s.pct}%)`;
 
+        const text = document.createElement('div');
+        text.className = 'ctx-text';
         const name = document.createElement('span');
         name.className = 'ctx-name';
         name.textContent = s.name;
+        const tok = document.createElement('span');
+        tok.className = 'ctx-tokens';
+        tok.textContent = tokens;
+        text.append(name, tok);
 
-        const meta = document.createElement('span');
-        meta.className = 'ctx-meta';
-        const tokens = s.tokens >= 1000 ? `${Math.round(s.tokens / 1000)}k` : `${s.tokens}`;
-        const pct = document.createElement('b');
-        pct.textContent = `${s.pct}%`;
-        meta.append(`${tokens} · `, pct);
-
-        const bar = document.createElement('div');
-        bar.className = 'ctx-bar';
-        const fill = document.createElement('div');
-        fill.className = 'ctx-fill';
-        fill.style.setProperty('--bar-color', s.pct >= thresholds[1] ? 'var(--crit)' : brand);
-        fill.dataset.target = `${Math.min(s.pct, 100)}%`;
-        fill.style.width = fill.dataset.target;
-        bar.appendChild(fill);
-
-        row.append(name, meta, bar);
-        return row;
+        item.append(contextRing(s.pct, thresholds, brand), text);
+        return item;
     }));
 }
 
