@@ -234,8 +234,45 @@ function updateData(data) {
     setPinMode(!!data.pin_mode);
 }
 
+// ---------------------------------------------------------------------------
+// Linger: after the hotkey is released (pin mode off), the HUD stays up for
+// a grace period before fading. Hovering pauses the countdown so reaching
+// for the pin button is never a race; leaving restarts a short one.
+// ---------------------------------------------------------------------------
+
+let lingerTimer = null;
+let lingerArmed = false;
+const LINGER_AFTER_LEAVE_SECONDS = 5;
+
+function cancelLinger(disarm) {
+    if (lingerTimer) {
+        clearTimeout(lingerTimer);
+        lingerTimer = null;
+    }
+    if (disarm) lingerArmed = false;
+}
+
+function beginLinger(seconds) {
+    cancelLinger(true);
+    lingerArmed = true;
+    lingerTimer = setTimeout(() => {
+        lingerTimer = null;
+        lingerArmed = false;
+        pywebview.api.close();
+    }, seconds * 1000);
+}
+
+// Called by Python right before hiding: play the fade-out.
+function hudFadeOut() {
+    cancelLinger(true);
+    document.body.classList.remove('open');
+    document.body.classList.add('closing');
+}
+
 // Replay the spring entrance and bar sweep each time Python shows the window.
 function hudShown() {
+    cancelLinger(true);
+    document.body.classList.remove('closing');
     document.body.classList.remove('open');
     void document.body.offsetHeight; // restart the entrance animation
     document.body.classList.add('open');
@@ -301,11 +338,18 @@ function init(config) {
     els.pinBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const next = !els.pinBtn.classList.contains('pinned');
+        if (next) cancelLinger(true); // pinning while lingering keeps it up
         setPinMode(next);
         pywebview.api.set_pin_mode(next).then((applied) => setPinMode(!!applied)).catch(() => setPinMode(!next));
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') pywebview.api.close();
+    });
+
+    // Hovering pauses the linger countdown; leaving restarts a short one.
+    document.body.addEventListener('mouseenter', () => cancelLinger(false));
+    document.body.addEventListener('mouseleave', () => {
+        if (lingerArmed) beginLinger(LINGER_AFTER_LEAVE_SECONDS);
     });
 
     els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);

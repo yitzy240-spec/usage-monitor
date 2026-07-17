@@ -30,7 +30,7 @@ import webview  # type: ignore[import-untyped]  # no type stubs available
 
 from .claude_sessions import active_sessions
 from .i18n import T
-from .settings import HUD_HOTKEY, HUD_SESSIONS, HUD_THRESHOLDS
+from .settings import HUD_HOTKEY, HUD_LINGER, HUD_SESSIONS, HUD_THRESHOLDS
 
 _logger = logging.getLogger(__name__)
 
@@ -300,13 +300,24 @@ class UsageHud:
                 self._refresh_stop.clear()
                 threading.Thread(target=self._refresh_loop, daemon=True).start()
 
-    def hide(self) -> None:
+    def hide(self, fade: bool = True) -> None:
         with self._lock:
             if not self._visible:
                 return
             self._visible = False
             self._refresh_stop.set()
-            ctypes.windll.user32.ShowWindow(self._hwnd, _SW_HIDE)
+
+        if fade:
+            try:
+                self._window.evaluate_js('hudFadeOut && hudFadeOut()')
+                time.sleep(0.24)
+            except Exception:
+                pass
+            # A re-summon may have raced the fade; never hide the new peek.
+            if self._visible:
+                return
+
+        ctypes.windll.user32.ShowWindow(self._hwnd, _SW_HIDE)
 
     def set_pin_mode(self, enabled: bool) -> bool:
         self._pin_mode = bool(enabled)
@@ -386,8 +397,17 @@ class UsageHud:
             if not self._visible:  # closed from the HUD while still holding
                 return
 
-        if not self._pin_mode:
-            self.hide()
+        if self._pin_mode:
+            return
+        if HUD_LINGER > 0:
+            # Let JS own the countdown - it can see hovering, so reaching
+            # for the pin button never races a hide.
+            try:
+                self._window.evaluate_js(f'beginLinger && beginLinger({int(HUD_LINGER)})')
+                return
+            except Exception:
+                pass
+        self.hide()
 
 
 class _HudApi:

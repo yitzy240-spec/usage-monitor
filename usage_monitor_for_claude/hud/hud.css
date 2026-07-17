@@ -54,6 +54,15 @@ body.open #card {
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+body.closing #card {
+    animation: fade-out 220ms ease-out forwards;
+}
+
+@keyframes fade-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
 /* Grain, for depth */
 #card::after {
     content: '';

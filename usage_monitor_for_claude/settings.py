@@ -31,7 +31,7 @@ __all__ = [
     'CODEX_ENABLED', 'CODEX_POLL_INTERVAL',
     'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
-    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_SESSIONS', 'HUD_THRESHOLDS',
+    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_LINGER', 'HUD_SESSIONS', 'HUD_THRESHOLDS',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
@@ -50,6 +50,7 @@ _NUMERIC_BOUNDS: dict[str, int] = {
     'max_backoff': 1,
     'idle_pause': 0,
     'codex_poll_interval': 1,
+    'hud_linger': 0,
 }
 _COLOR_KEYS = frozenset({'bg', 'fg', 'fg_dim', 'fg_heading', 'fg_link', 'bar_bg', 'bar_fg', 'bar_fg_warn', 'bar_divider', 'bar_marker'})
 _ICON_KEYS = frozenset({'icon_light', 'icon_dark'})
@@ -340,6 +341,9 @@ HUD_HOTKEY: str = _S.get('hud_hotkey', 'ctrl+alt+space')
 HUD_THRESHOLDS: list[float] = _S.get('hud_thresholds', [70, 90])
 # Show the context-window fill of currently active Claude Code sessions
 HUD_SESSIONS: bool = _S.get('hud_sessions', True)
+# Seconds the unpinned HUD lingers after the hotkey is released before
+# fading out (0 = hide immediately). Hovering it pauses the countdown.
+HUD_LINGER: int = _S.get('hud_linger', 20)
 
 # Codex (OpenAI) provider: enabled by default when a Codex CLI login exists.
 # (The default probes the standard ~/.codex location only; set the key
