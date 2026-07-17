@@ -487,9 +487,9 @@ class TestSnapshotToDict(unittest.TestCase):
     # -- top-level dict structure --
 
     def test_all_top_level_keys_present(self):
-        """Result always has profile, usage, extra, installations, status."""
+        """Result always has profile, usage, extra, codex, installations, status."""
         result = _snapshot_to_dict(_snap(), installations=[])
-        self.assertEqual(set(result.keys()), {'profile', 'usage', 'extra', 'installations', 'status'})
+        self.assertEqual(set(result.keys()), {'profile', 'usage', 'extra', 'codex', 'installations', 'status'})
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +563,7 @@ class TestInitConfig(unittest.TestCase):
         snap = _snap(profile={'account': {'email': 'a@b.com'}, 'organization': {}})
         config = _init_config(snap)
         self.assertEqual(config['data']['profile']['email'], 'a@b.com')
-        self.assertEqual(set(config['data'].keys()), {'profile', 'usage', 'extra', 'installations', 'status'})
+        self.assertEqual(set(config['data'].keys()), {'profile', 'usage', 'extra', 'codex', 'installations', 'status'})
 
 
 # ---------------------------------------------------------------------------

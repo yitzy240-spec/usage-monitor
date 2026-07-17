@@ -68,8 +68,49 @@ def _usage_entries(usage: dict[str, Any]) -> list[tuple[str, dict[str, Any] | No
     return [(popup_label(key), usage.get(key), field_period(key), key) for key in fields]
 
 
+def _codex_to_dict(codex: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Convert a Codex usage snapshot to a JSON-serializable dict for the popup JS.
+
+    Returns None when the Codex provider is disabled or has not produced a
+    snapshot yet, so the section stays hidden.  Reuses the same bar-entry
+    shape as the Claude usage list.
+    """
+    if not codex:
+        return None
+
+    usage = []
+    for label, entry, period, field in _usage_entries(codex):
+        if not entry or not isinstance(entry, dict) or entry.get('utilization') is None:
+            continue
+        pct = entry.get('utilization', 0) or 0
+        resets_at = entry.get('resets_at', '')
+        time_pct = elapsed_pct(resets_at, period) if period else None
+        warn = pct >= 100 or (time_pct is not None and pct > time_pct)
+        marker_rel = max(0.0, min(1.0, time_pct / 100)) if time_pct is not None else None
+
+        usage.append({
+            'key': field,
+            'label': label,
+            'pct_text': f'{pct:.0f}%',
+            'fill_pct': max(0.0, min(1.0, pct / 100)),
+            'warn': warn,
+            'reset_text': time_until(resets_at) if resets_at else '',
+            'dividers': divider_positions(resets_at, period) if period else [],
+            'marker_rel': marker_rel,
+        })
+
+    error = None
+    if codex.get('auth_error'):
+        error = T['codex_login_hint']
+    elif codex.get('error'):
+        error = str(codex['error'])[:120]
+
+    return {'usage': usage, 'error': error, 'plan': str(codex.get('plan_type', '')).title()}
+
+
 def _snapshot_to_dict(
     snap: CacheSnapshot, installations: list[dict[str, str]] | None = None, next_poll_time: float | None = None,
+    codex: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Convert a CacheSnapshot to a JSON-serializable dict for the popup JS.
 
@@ -158,12 +199,13 @@ def _snapshot_to_dict(
         'profile': profile,
         'usage': usage,
         'extra': extra,
+        'codex': _codex_to_dict(codex),
         'installations': installations,
         'status': status,
     }
 
 
-def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None) -> dict[str, Any]:
+def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None, codex: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build the config object passed to JS ``init()`` after the page loads."""
     return {
         'colors': {
@@ -172,7 +214,7 @@ def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None) -> di
         },
         't': {
             'title': T['popup_title'], 'account': T['account'], 'email': T['email'], 'plan': T['plan'],
-            'usage': T['usage'], 'extra_usage': T['extra_usage'],
+            'usage': T['usage'], 'extra_usage': T['extra_usage'], 'codex': T['codex'],
             'claude_code': T['claude_code'], 'changelog': T['changelog'],
             'pin_popup': T['pin_popup'], 'unpin_popup': T['unpin_popup'],
             'status_updated_s': T['status_updated_s'], 'status_updated': T['status_updated'],
@@ -181,7 +223,7 @@ def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None) -> di
         },
         'app_version': __version__,
         'compact_hide': COMPACT_HIDE,
-        'data': _snapshot_to_dict(snap, next_poll_time=next_poll_time),
+        'data': _snapshot_to_dict(snap, next_poll_time=next_poll_time, codex=codex),
     }
 
 
@@ -296,7 +338,7 @@ class UsagePopup:
 
     def _on_loaded(self) -> None:
         """Inject config and show the window transparently for layout."""
-        config = _init_config(self.app.cache.snapshot, next_poll_time=self.app._next_poll_time)
+        config = _init_config(self.app.cache.snapshot, next_poll_time=self.app._next_poll_time, codex=self.app._codex_response)
         self._window.evaluate_js(f'init({json.dumps(config)})')
 
         self._popup_hwnd = self._window.native.Handle.ToInt32()
@@ -538,6 +580,7 @@ class UsagePopup:
         """Poll for data changes and push updates to the popup."""
         cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
         last_next_poll_time = self.app._next_poll_time
+        last_codex = self.app._codex_response
         while self._running:
             time.sleep(self._CHECK_MS / 1000)
             if not self._running:
@@ -545,17 +588,19 @@ class UsagePopup:
             try:
                 snap = self.app.cache.snapshot
                 next_poll_time = self.app._next_poll_time
-                if snap.version == self._last_version and next_poll_time == last_next_poll_time:
+                codex = self.app._codex_response
+                if snap.version == self._last_version and next_poll_time == last_next_poll_time and codex == last_codex:
                     continue
                 if snap.version != self._last_version:
                     cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
-                data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time)
+                data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time, codex=codex)
                 self._window.evaluate_js(f'updateData({json.dumps(data)})')
                 # Commit the markers only after a successful push, so a failed
                 # update is retried on the next tick instead of being skipped
                 # by the dedup check until the next data change.
                 self._last_version = snap.version
                 last_next_poll_time = next_poll_time
+                last_codex = codex
             except Exception:
                 # A transient failure (snapshot conversion, filesystem scan,
                 # one-off evaluate_js hiccup) must not end the update stream -

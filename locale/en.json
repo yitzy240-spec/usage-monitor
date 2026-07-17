@@ -58,5 +58,7 @@
     "status_next_update": "Next update in {duration}",
     "status_refreshing": "Refreshing...",
     "already_running": "Usage Monitor for Claude v{running_version} is already running.\n\nDo you want to replace the running instance?",
-    "replace_failed": "The running instance could not be replaced.\n\nPlease close it manually and try again."
+    "replace_failed": "The running instance could not be replaced.\n\nPlease close it manually and try again.",
+    "codex": "Codex",
+    "codex_login_hint": "Sign in with: codex login"
 }

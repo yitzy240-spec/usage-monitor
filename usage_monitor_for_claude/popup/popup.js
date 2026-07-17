@@ -27,6 +27,7 @@ function init(config) {
     document.getElementById('labelEmail').textContent = translations.email;
     document.getElementById('labelPlan').textContent = translations.plan;
     document.getElementById('headingUsage').textContent = translations.usage;
+    document.getElementById('headingCodex').textContent = translations.codex;
     document.getElementById('headingExtraUsage').textContent = translations.extra_usage;
     document.getElementById('headingClaudeCode').textContent = translations.claude_code;
 
@@ -48,6 +49,9 @@ function init(config) {
         usageSection: document.getElementById('usageSection'),
         headingUsage: document.getElementById('headingUsage'),
         usageBars: document.getElementById('usageBars'),
+        codexSection: document.getElementById('codexSection'),
+        codexBars: document.getElementById('codexBars'),
+        codexError: document.getElementById('codexError'),
         extraSection: document.getElementById('extraSection'),
         extraSpent: document.getElementById('extraSpent'),
         extraPct: document.getElementById('extraPct'),
@@ -177,6 +181,19 @@ function updateData(data) {
     els.usageSection.classList.toggle('visible', hasUsage);
     if (hasUsage) {
         updateUsageBars(usage);
+    }
+
+    // Codex bars are hidden individually via "codex_<field>" keys, or as a
+    // whole section via "codex", mirroring the Claude bar hiding.
+    const codex = data.codex;
+    const codexEntries = (codex?.usage || []).filter((entry) => !compactHidden(`codex_${entry.key}`));
+    const hasCodex = !!codex && (!!codexEntries.length || !!codex.error);
+    const codexVisible = hasCodex && !compactHidden('codex');
+    els.codexSection.classList.toggle('visible', codexVisible);
+    if (hasCodex) {
+        updateBarsIn(els.codexBars, codexEntries);
+        els.codexError.textContent = codex.error || '';
+        els.codexError.style.display = codex.error ? '' : 'none';
     }
 
     const hasExtra = !!data.extra;
@@ -324,24 +341,28 @@ function formatCountdown(totalSeconds) {
 }
 
 function updateUsageBars(entries) {
+    updateBarsIn(els.usageBars, entries);
+}
+
+function updateBarsIn(containerEl, entries) {
     // Rebuild whenever the field set changes, not only the count - after an
     // account switch the same number of bars can carry different quotas, and
     // an in-place update would show the new values under the old labels.
-    const bars = els.usageBars.children;
+    const bars = containerEl.children;
     const sameFields = entries.length === bars.length
         && entries.every((entry, i) => bars[i].dataset.key === entry.key);
 
     if (!sameFields) {
-        els.usageBars.replaceChildren(...entries.map(createBarElement));
+        containerEl.replaceChildren(...entries.map(createBarElement));
         requestAnimationFrame(() => {
             for (let i = 0; i < entries.length; i++) {
-                els.usageBars.children[i].querySelector('.bar-fill').style.width =
+                containerEl.children[i].querySelector('.bar-fill').style.width =
                     `${entries[i].fill_pct * 100}%`;
             }
         });
     } else {
         for (let i = 0; i < entries.length; i++) {
-            updateBarElement(els.usageBars.children[i], entries[i]);
+            updateBarElement(containerEl.children[i], entries[i]);
         }
     }
 }
