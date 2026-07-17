@@ -4,61 +4,28 @@ let lastData = null;
 let blinkTimer = null;
 
 // ---------------------------------------------------------------------------
-// Pixel mascot - 12x12 maps rendered as box-shadow, no image assets.
-// o body / O outline / b dark / w cream
+// Pixel mascot - the canonical Clawd 12x8 grid (recovered from the Claude
+// Code logo by ClawdMoji, MIT: github.com/afspies/ClawdMoji), rendered as
+// box-shadow so no image assets are needed.  '#' body / 'O' eye.
 // ---------------------------------------------------------------------------
 
 const PX = 4;
-const PALETTE = { o: '#D97757', O: '#8F4A33', b: '#2A1D16', w: '#F0EEE5' };
+const PALETTE = { '#': '#DA7758', 'O': '#16130E' };
 
-const FACES = {
-    happy: [
-        '....OOOO....',
-        '..OOooooOO..',
-        '.OooooooooO.',
-        '.OooooooooO.',
-        'OooboooboooO',
-        'OooooooooooO',
-        'OooboooobooO',
-        'OooobbbboooO',
-        'OooooooooooO',
-        '.OooooooooO.',
-        '..OOooooOO..',
-        '....O..O....',
-    ],
-    sweat: [
-        '....OOOO....',
-        '..OOooooOO..',
-        '.OooooooooO.',
-        '.OooooooooO.',
-        'OooboooboooO',
-        'OooooooooooO',
-        'OooooooooooO',
-        'OoobbbbbbooO',
-        'OooooooooooO',
-        '.OooooooooO.',
-        '..OOooooOO..',
-        '....O..O....',
-    ],
-    panic: [
-        '....OOOO....',
-        '..OOooooOO..',
-        '.OoowowoowO.',
-        '.OoobobobwO.',
-        'OoowbowobooO',
-        'OooooooooooO',
-        'OooobbbboooO',
-        'OooobbbboooO',
-        'OoooobbooooO',
-        '.OooooooooO.',
-        '..OOooooOO..',
-        '...O....O...',
-    ],
-};
+const CLAWD = [
+    '..########..',
+    '..#O####O#..',
+    '############',
+    '############',
+    '..########..',
+    '..########..',
+    '..#.#..#.#..',
+    '..#.#..#.#..',
+];
 
-// Eyes-closed variant for the idle blink, derived per mood.
+// Eyes-closed variant for the idle blink.
 function blinkFrame(map) {
-    return map.map((row, y) => (y === 4 ? row.replaceAll('b', 'O').replaceAll('w', 'o') : row));
+    return map.map((row, y) => (y === 1 ? row.replaceAll('O', '#') : row));
 }
 
 function mapToShadow(map) {
@@ -73,19 +40,16 @@ function mapToShadow(map) {
     return shadows.join(',');
 }
 
-let currentMood = 'happy';
-
 function setMood(mood) {
-    currentMood = mood;
     document.body.classList.remove('mood-happy', 'mood-sweat', 'mood-panic');
     document.body.classList.add(`mood-${mood}`);
-    els.mascot.style.boxShadow = mapToShadow(FACES[mood]);
+    els.mascot.style.boxShadow = mapToShadow(CLAWD);
 
     if (blinkTimer) clearInterval(blinkTimer);
     blinkTimer = setInterval(() => {
-        els.mascot.style.boxShadow = mapToShadow(blinkFrame(FACES[currentMood]));
+        els.mascot.style.boxShadow = mapToShadow(blinkFrame(CLAWD));
         setTimeout(() => {
-            els.mascot.style.boxShadow = mapToShadow(FACES[currentMood]);
+            els.mascot.style.boxShadow = mapToShadow(CLAWD);
         }, 140);
     }, 3200);
 }
@@ -142,13 +106,20 @@ function renderRows(container, bars, thresholds) {
     }));
 }
 
-function renderProvider(sectionEl, rowsEl, planEl, errorEl, provider, thresholds) {
+function renderProvider(sectionEl, rowsEl, planEl, peakEl, errorEl, provider, thresholds) {
     const visible = !!provider;
     sectionEl.classList.toggle('visible', visible);
     if (!visible) return;
 
     planEl.textContent = provider.plan || '';
     planEl.style.display = provider.plan ? '' : 'none';
+    if (provider.peak !== null && provider.peak !== undefined) {
+        peakEl.textContent = `${provider.peak}%`;
+        peakEl.style.color = severityColor(provider.peak, thresholds);
+        peakEl.style.display = '';
+    } else {
+        peakEl.style.display = 'none';
+    }
     renderRows(rowsEl, provider.usage || [], thresholds);
     errorEl.textContent = provider.error || '';
     errorEl.style.display = provider.error ? 'block' : 'none';
@@ -158,12 +129,10 @@ function updateData(data) {
     lastData = data;
     const thresholds = data.thresholds || [70, 90];
 
-    els.worstPct.textContent = `${data.worst_pct}%`;
-    els.worstPct.style.color = severityColor(data.worst_pct, thresholds);
     setMood(data.mood || 'happy');
 
-    renderProvider(els.providerClaude, els.claudeRows, els.claudePlan, els.claudeError, data.claude, thresholds);
-    renderProvider(els.providerCodex, els.codexRows, els.codexPlan, els.codexError, data.codex, thresholds);
+    renderProvider(els.providerClaude, els.claudeRows, els.claudePlan, els.claudePeak, els.claudeError, data.claude, thresholds);
+    renderProvider(els.providerCodex, els.codexRows, els.codexPlan, els.codexPeak, els.codexError, data.codex, thresholds);
 
     document.body.classList.toggle('pinned', !!data.pinned);
 }
@@ -196,15 +165,16 @@ function init(config) {
     els = {
         mascot: document.getElementById('mascot'),
         tagline: document.getElementById('tagline'),
-        worstPct: document.getElementById('worstPct'),
         pinState: document.getElementById('pinState'),
         providerClaude: document.getElementById('providerClaude'),
         claudeRows: document.getElementById('claudeRows'),
         claudePlan: document.getElementById('claudePlan'),
+        claudePeak: document.getElementById('claudePeak'),
         claudeError: document.getElementById('claudeError'),
         providerCodex: document.getElementById('providerCodex'),
         codexRows: document.getElementById('codexRows'),
         codexPlan: document.getElementById('codexPlan'),
+        codexPeak: document.getElementById('codexPeak'),
         codexError: document.getElementById('codexError'),
     };
 

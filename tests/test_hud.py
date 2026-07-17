@@ -60,11 +60,13 @@ class TestProviderPayload(unittest.TestCase):
         keys = {bar['key'] for bar in payload['usage']}
         self.assertEqual(keys, {'five_hour', 'seven_day'})
         self.assertIsNone(payload['error'])
+        self.assertEqual(payload['peak'], 42)
 
     def test_auth_error_uses_login_hint(self):
         payload = _provider_payload({'error': 'x', 'auth_error': True}, 'run codex login')
         self.assertEqual(payload['error'], 'run codex login')
         self.assertEqual(payload['usage'], [])
+        self.assertIsNone(payload['peak'])
 
     def test_plain_error_passthrough(self):
         payload = _provider_payload({'error': 'HTTP 500'}, 'hint')

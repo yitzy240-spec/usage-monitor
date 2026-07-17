@@ -130,7 +130,8 @@ def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str
     elif not bars:
         error = T['loading'] if not usage else None
 
-    return {'usage': bars, 'error': error, 'plan': str(usage.get('plan_type', '')).title()}
+    peak = round(max((bar['fill_pct'] * 100 for bar in bars), default=0)) if bars else None
+    return {'usage': bars, 'error': error, 'plan': str(usage.get('plan_type', '')).title(), 'peak': peak}
 
 
 class UsageHud:
@@ -181,7 +182,6 @@ class UsageHud:
             'claude': claude,
             'codex': codex,
             'mood': pick_mood(worst),
-            'worst_pct': round(worst),
             'thresholds': HUD_THRESHOLDS,
             'pinned': self._pinned,
         }

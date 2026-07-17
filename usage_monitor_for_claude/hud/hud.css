@@ -73,7 +73,7 @@ header {
     padding-bottom: 10px;
 }
 
-#mascotBox { position: relative; width: 48px; height: 48px; flex: none; }
+#mascotBox { position: relative; width: 48px; height: 38px; flex: none; }
 
 /* Pixel mascot: a 1px div scaled up via box-shadow frames set from JS */
 #mascot {
@@ -98,7 +98,7 @@ body.mood-panic #mascot { animation: panic-shake 0.35s steps(2) infinite; }
 
 #sweatDrop {
     position: absolute;
-    top: 8px; right: 2px;
+    top: 0; right: 4px;
     width: 5px; height: 7px;
     border-radius: 50% 50% 55% 55% / 35% 35% 65% 65%;
     background: #9CC6DA;
@@ -132,30 +132,7 @@ body.mood-sweat #sweatDrop, body.mood-panic #sweatDrop {
     white-space: nowrap;
 }
 
-#worstBox {
-    margin-left: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    line-height: 1;
-}
-
-#worstPct {
-    font-family: var(--mono);
-    font-size: 26px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-}
-
-#worstLabel {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    color: var(--ink-faint);
-    margin-top: 3px;
-}
-
-.controls { display: flex; flex-direction: column; gap: 2px; margin-left: 4px; }
+.controls { display: flex; flex-direction: row; gap: 2px; margin-left: auto; align-self: flex-start; }
 
 .controls button {
     all: unset;
@@ -182,15 +159,28 @@ body.mood-sweat #sweatDrop, body.mood-panic #sweatDrop {
 
 .provider-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
 }
 
+.provider-icon { width: 15px; height: 15px; flex: none; }
+.icon-claude { color: var(--orange); }
+.icon-codex { color: var(--ink-dim); }
+
 .provider-name {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.02em;
+}
+
+.provider-peak {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
 }
 
 .provider-plan {
