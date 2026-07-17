@@ -9,8 +9,7 @@ let blinkTimer = null;
 // box-shadow so no image assets are needed.  '#' body / 'O' eye.
 // ---------------------------------------------------------------------------
 
-const PX = 4;
-const PALETTE = { '#': '#DA7758', 'O': '#16130E' };
+const PX = 3;
 
 const CLAWD = [
     '..########..',
@@ -23,33 +22,52 @@ const CLAWD = [
     '..#.#..#.#..',
 ];
 
-// Eyes-closed variant for the idle blink.
+// An original purple blossom-bot cousin for Codex, same pixel family.
+const CODEX_BOT = [
+    '...######...',
+    '.##########.',
+    '.##O####O##.',
+    '############',
+    '.##########.',
+    '...######...',
+    '..#.#..#.#..',
+    '..#.#..#.#..',
+];
+
+const SPRITES = {
+    claude: { map: CLAWD, palette: { '#': '#DA7758', 'O': '#16130E' } },
+    codex: { map: CODEX_BOT, palette: { '#': '#A78BFA', 'O': '#16130E' } },
+};
+
+// Eyes-closed variant for the idle blink (eyes live on row 1 or 2).
 function blinkFrame(map) {
-    return map.map((row, y) => (y === 1 ? row.replaceAll('O', '#') : row));
+    return map.map((row) => row.replaceAll('O', '#'));
 }
 
-function mapToShadow(map) {
+function mapToShadow(map, palette) {
     const shadows = [];
     map.forEach((row, y) => {
         [...row].forEach((ch, x) => {
-            if (PALETTE[ch]) {
-                shadows.push(`${x * PX}px ${y * PX}px 0 0 ${PALETTE[ch]}`);
+            if (palette[ch]) {
+                shadows.push(`${x * PX}px ${y * PX}px 0 0 ${palette[ch]}`);
             }
         });
     });
     return shadows.join(',');
 }
 
-function setMood(mood) {
-    document.body.classList.remove('mood-happy', 'mood-sweat', 'mood-panic');
-    document.body.classList.add(`mood-${mood}`);
-    els.mascot.style.boxShadow = mapToShadow(CLAWD);
-
+function startBlink() {
     if (blinkTimer) clearInterval(blinkTimer);
     blinkTimer = setInterval(() => {
-        els.mascot.style.boxShadow = mapToShadow(blinkFrame(CLAWD));
+        for (const [key, sprite] of Object.entries(SPRITES)) {
+            const el = els[`${key}Sprite`];
+            if (el) el.style.boxShadow = mapToShadow(blinkFrame(sprite.map), sprite.palette);
+        }
         setTimeout(() => {
-            els.mascot.style.boxShadow = mapToShadow(CLAWD);
+            for (const [key, sprite] of Object.entries(SPRITES)) {
+                const el = els[`${key}Sprite`];
+                if (el) el.style.boxShadow = mapToShadow(sprite.map, sprite.palette);
+            }
         }, 140);
     }, 3200);
 }
@@ -58,14 +76,23 @@ function setMood(mood) {
 // Rendering
 // ---------------------------------------------------------------------------
 
+// Peak-number color: calm cream until the warn threshold, then amber/red.
 function severityColor(pct, thresholds) {
     const [lo, hi] = thresholds;
     if (pct >= hi) return 'var(--crit)';
     if (pct >= lo) return 'var(--warn)';
-    return 'var(--ok)';
+    return 'var(--ink)';
 }
 
-function renderRows(container, bars, thresholds) {
+// Bars fill in the provider's brand color; red means trouble - critical
+// level or usage running ahead of the elapsed-time marker (fast drain).
+function barColor(bar, thresholds, brand) {
+    const [, hi] = thresholds;
+    if (bar.warn || bar.fill_pct * 100 >= hi) return 'var(--crit)';
+    return brand;
+}
+
+function renderRows(container, bars, thresholds, brand) {
     container.replaceChildren(...bars.map((bar) => {
         const row = document.createElement('div');
         row.className = 'row';
@@ -90,7 +117,7 @@ function renderRows(container, bars, thresholds) {
         track.className = 'row-bar';
         const fill = document.createElement('div');
         fill.className = 'row-fill';
-        fill.style.setProperty('--bar-color', severityColor(bar.fill_pct * 100, thresholds));
+        fill.style.setProperty('--bar-color', barColor(bar, thresholds, brand));
         fill.dataset.target = `${bar.fill_pct * 100}%`;
         fill.style.width = fill.dataset.target;
         track.appendChild(fill);
@@ -106,13 +133,21 @@ function renderRows(container, bars, thresholds) {
     }));
 }
 
-function renderProvider(sectionEl, rowsEl, planEl, peakEl, errorEl, provider, thresholds) {
+function renderProvider(key, provider, thresholds, brand) {
+    const sectionEl = els[`provider${key}`];
     const visible = !!provider;
     sectionEl.classList.toggle('visible', visible);
     if (!visible) return;
 
+    const lower = key.toLowerCase();
+    sectionEl.classList.remove('mood-happy', 'mood-sweat', 'mood-panic');
+    sectionEl.classList.add(`mood-${provider.mood || 'happy'}`);
+
+    const planEl = els[`${lower}Plan`];
     planEl.textContent = provider.plan || '';
     planEl.style.display = provider.plan ? '' : 'none';
+
+    const peakEl = els[`${lower}Peak`];
     if (provider.peak !== null && provider.peak !== undefined) {
         peakEl.textContent = `${provider.peak}%`;
         peakEl.style.color = severityColor(provider.peak, thresholds);
@@ -120,7 +155,10 @@ function renderProvider(sectionEl, rowsEl, planEl, peakEl, errorEl, provider, th
     } else {
         peakEl.style.display = 'none';
     }
-    renderRows(rowsEl, provider.usage || [], thresholds);
+
+    renderRows(els[`${lower}Rows`], provider.usage || [], thresholds, brand);
+
+    const errorEl = els[`${lower}Error`];
     errorEl.textContent = provider.error || '';
     errorEl.style.display = provider.error ? 'block' : 'none';
 }
@@ -129,12 +167,10 @@ function updateData(data) {
     lastData = data;
     const thresholds = data.thresholds || [70, 90];
 
-    setMood(data.mood || 'happy');
+    renderProvider('Claude', data.claude, thresholds, 'var(--orange)');
+    renderProvider('Codex', data.codex, thresholds, 'var(--codex)');
 
-    renderProvider(els.providerClaude, els.claudeRows, els.claudePlan, els.claudePeak, els.claudeError, data.claude, thresholds);
-    renderProvider(els.providerCodex, els.codexRows, els.codexPlan, els.codexPeak, els.codexError, data.codex, thresholds);
-
-    document.body.classList.toggle('pinned', !!data.pinned);
+    setPinned(!!data.pinned);
 }
 
 // Replay the spring entrance and bar sweep each time Python shows the window.
@@ -153,6 +189,7 @@ function hudShown() {
 function setPinned(pinned) {
     document.body.classList.toggle('pinned', pinned);
     els.pinState.textContent = pinned ? 'pinned' : '';
+    els.hint.textContent = pinned ? 'click or esc to close' : 'click to pin · esc to close';
 }
 
 // ---------------------------------------------------------------------------
@@ -163,9 +200,11 @@ function init(config) {
     translations = config.t;
 
     els = {
-        mascot: document.getElementById('mascot'),
         tagline: document.getElementById('tagline'),
         pinState: document.getElementById('pinState'),
+        hint: document.getElementById('hint'),
+        claudeSprite: document.getElementById('claudeSprite'),
+        codexSprite: document.getElementById('codexSprite'),
         providerClaude: document.getElementById('providerClaude'),
         claudeRows: document.getElementById('claudeRows'),
         claudePlan: document.getElementById('claudePlan'),
@@ -191,16 +230,24 @@ function init(config) {
         pywebview.api.open_popup();
     });
 
-    // Click anywhere pins the peek; Escape closes.
+    // Click toggles: pin the peek, or dismiss an already-pinned HUD.
     document.body.addEventListener('click', () => {
-        setPinned(true);
-        pywebview.api.pin();
+        if (document.body.classList.contains('pinned')) {
+            pywebview.api.close();
+        } else {
+            setPinned(true);
+            pywebview.api.pin();
+        }
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') pywebview.api.close();
     });
 
-    els.pinState.textContent = '';
+    for (const [key, sprite] of Object.entries(SPRITES)) {
+        els[`${key}Sprite`].style.boxShadow = mapToShadow(sprite.map, sprite.palette);
+    }
+    startBlink();
+    setPinned(false);
     updateData(config.data);
 
     // Content-driven window height: #card.scrollHeight is the needed height

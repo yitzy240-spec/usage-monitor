@@ -106,12 +106,17 @@ def parse_hotkey(spec: str) -> tuple[int, int] | None:
     return (mods, vk) if vk is not None else None
 
 
-def pick_mood(worst_pct: float, thresholds: list[float] | None = None) -> str:
-    """Map the worst utilization onto a mascot mood."""
+def pick_mood(worst_pct: float, thresholds: list[float] | None = None, pace_ahead: bool = False) -> str:
+    """Map a provider's worst utilization (and burn pace) onto a mascot mood.
+
+    ``pace_ahead`` marks usage running ahead of elapsed time in some window
+    (draining faster than the period refills) - that alone is worth a sweat
+    even at a low absolute percentage.
+    """
     lo, hi = (thresholds or HUD_THRESHOLDS)[:2]
     if worst_pct >= hi:
         return 'panic'
-    if worst_pct >= lo:
+    if worst_pct >= lo or pace_ahead:
         return 'sweat'
     return 'happy'
 
@@ -131,7 +136,14 @@ def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str
         error = T['loading'] if not usage else None
 
     peak = round(max((bar['fill_pct'] * 100 for bar in bars), default=0)) if bars else None
-    return {'usage': bars, 'error': error, 'plan': str(usage.get('plan_type', '')).title(), 'peak': peak}
+    pace_ahead = any(bar['warn'] for bar in bars)
+    return {
+        'usage': bars,
+        'error': error,
+        'plan': str(usage.get('plan_type', '')).title(),
+        'peak': peak,
+        'mood': pick_mood(peak or 0, pace_ahead=pace_ahead),
+    }
 
 
 class UsageHud:
@@ -173,15 +185,9 @@ class UsageHud:
         claude = _provider_payload(snap.usage, f"{T['warn_no_token']} {T['warn_login']}")
         codex = _provider_payload(self.app._codex_response, T['codex_login_hint']) if self.app.codex is not None else None
 
-        worst = 0.0
-        for provider in (claude, codex):
-            for bar in (provider or {}).get('usage', []):
-                worst = max(worst, bar['fill_pct'] * 100)
-
         return {
             'claude': claude,
             'codex': codex,
-            'mood': pick_mood(worst),
             'thresholds': HUD_THRESHOLDS,
             'pinned': self._pinned,
         }

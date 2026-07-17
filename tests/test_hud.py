@@ -47,6 +47,11 @@ class TestPickMood(unittest.TestCase):
         self.assertEqual(pick_mood(90, [70, 90]), 'panic')
         self.assertEqual(pick_mood(100, [70, 90]), 'panic')
 
+    def test_pace_ahead_sweats_at_low_usage(self):
+        """Usage running ahead of the clock is a sweat even at low percent."""
+        self.assertEqual(pick_mood(10, [70, 90], pace_ahead=True), 'sweat')
+        self.assertEqual(pick_mood(95, [70, 90], pace_ahead=True), 'panic')
+
 
 class TestProviderPayload(unittest.TestCase):
     """Tests for _provider_payload()."""
@@ -61,6 +66,7 @@ class TestProviderPayload(unittest.TestCase):
         self.assertEqual(keys, {'five_hour', 'seven_day'})
         self.assertIsNone(payload['error'])
         self.assertEqual(payload['peak'], 42)
+        self.assertEqual(payload['mood'], 'happy')
 
     def test_auth_error_uses_login_hint(self):
         payload = _provider_payload({'error': 'x', 'auth_error': True}, 'run codex login')

@@ -8,6 +8,7 @@
     --ink-dim: #97927F;
     --ink-faint: #565243;
     --orange: #D97757;
+    --codex: #A78BFA;
     --ok: #A9BE7B;
     --warn: #E5B567;
     --crit: #E06C5B;
@@ -73,49 +74,6 @@ header {
     padding-bottom: 10px;
 }
 
-#mascotBox { position: relative; width: 48px; height: 38px; flex: none; }
-
-/* Pixel mascot: a 1px div scaled up via box-shadow frames set from JS */
-#mascot {
-    position: absolute;
-    top: 0; left: 0;
-    width: 4px; height: 4px;
-    animation: idle-bob 2.4s ease-in-out infinite;
-}
-
-@keyframes idle-bob {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(2px); }
-}
-
-body.mood-panic #mascot { animation: panic-shake 0.35s steps(2) infinite; }
-
-@keyframes panic-shake {
-    0%, 100% { transform: translate(0, 0); }
-    25% { transform: translate(-1px, 1px); }
-    75% { transform: translate(1px, 0); }
-}
-
-#sweatDrop {
-    position: absolute;
-    top: 0; right: 4px;
-    width: 5px; height: 7px;
-    border-radius: 50% 50% 55% 55% / 35% 35% 65% 65%;
-    background: #9CC6DA;
-    opacity: 0;
-}
-
-body.mood-sweat #sweatDrop, body.mood-panic #sweatDrop {
-    animation: sweat 1.6s ease-in infinite;
-}
-
-@keyframes sweat {
-    0% { opacity: 0; transform: translateY(0) scale(0.7); }
-    15% { opacity: 0.95; transform: translateY(2px) scale(1); }
-    70% { opacity: 0.95; transform: translateY(14px) scale(1); }
-    100% { opacity: 0; transform: translateY(20px) scale(0.9); }
-}
-
 #headText { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 
 #wordmark {
@@ -164,9 +122,54 @@ body.mood-sweat #sweatDrop, body.mood-panic #sweatDrop {
     margin-bottom: 6px;
 }
 
+/* Per-provider pixel sprite: a 1px div scaled up via box-shadow from JS.
+   Its mood classes live on the .provider section, so each mascot only
+   worries about its own subscription. */
+.sprite-box { position: relative; width: 36px; height: 26px; flex: none; }
+
+.sprite {
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 3px;
+    animation: idle-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes idle-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(2px); }
+}
+
+.provider.mood-panic .sprite { animation: panic-shake 0.35s steps(2) infinite; }
+
+@keyframes panic-shake {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(-1px, 1px); }
+    75% { transform: translate(1px, 0); }
+}
+
+.sprite-drop {
+    position: absolute;
+    top: 0; right: 3px;
+    width: 4px; height: 6px;
+    border-radius: 50% 50% 55% 55% / 35% 35% 65% 65%;
+    background: #9CC6DA;
+    opacity: 0;
+}
+
+.provider.mood-sweat .sprite-drop, .provider.mood-panic .sprite-drop {
+    animation: sweat 1.6s ease-in infinite;
+}
+
+@keyframes sweat {
+    0% { opacity: 0; transform: translateY(0) scale(0.7); }
+    15% { opacity: 0.95; transform: translateY(2px) scale(1); }
+    70% { opacity: 0.95; transform: translateY(10px) scale(1); }
+    100% { opacity: 0; transform: translateY(15px) scale(0.9); }
+}
+
 .provider-icon { width: 15px; height: 15px; flex: none; }
 .icon-claude { color: var(--orange); }
-.icon-codex { color: var(--ink-dim); }
+.icon-codex { color: var(--codex); }
 
 .provider-name {
     font-size: 13px;
