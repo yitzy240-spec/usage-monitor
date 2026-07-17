@@ -28,6 +28,7 @@ from .instance_id import effective_config_dir, is_default_config_dir
 __all__ = [
     'ALERT_TIME_AWARE', 'ALERT_TIME_AWARE_BELOW',
     'BAR_BG', 'BAR_DIVIDER', 'BAR_FG', 'BAR_FG_WARN', 'BAR_MARKER', 'BG',
+    'CODEX_ENABLED', 'CODEX_POLL_INTERVAL',
     'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
@@ -47,6 +48,7 @@ _NUMERIC_BOUNDS: dict[str, int] = {
     'poll_error': 1,
     'max_backoff': 1,
     'idle_pause': 0,
+    'codex_poll_interval': 1,
 }
 _COLOR_KEYS = frozenset({'bg', 'fg', 'fg_dim', 'fg_heading', 'fg_link', 'bar_bg', 'bar_fg', 'bar_fg_warn', 'bar_divider', 'bar_marker'})
 _ICON_KEYS = frozenset({'icon_light', 'icon_dark'})
@@ -55,7 +57,7 @@ _PERCENT_KEYS = frozenset({'alert_time_aware_below'})
 _STRING_KEYS = frozenset({'currency_symbol', 'language'})
 _VALID_TIME_FORMATS = frozenset({'24h', '12h'})
 _COMMAND_KEYS = frozenset({'on_double_click_command', 'on_reset_command', 'on_startup_command', 'on_threshold_command'})
-_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update'})
+_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update', 'codex_enabled'})
 _STRING_LIST_KEYS = frozenset({'tooltip_fields', 'compact_hide'})
 _WILDCARD_STRING_LIST_KEYS = frozenset({'popup_fields'})
 _VALID_BAR_MODES = frozenset({'utilization', 'overage'})
@@ -318,6 +320,12 @@ ALERT_TIME_AWARE_BELOW: float = _S.get('alert_time_aware_below', 90)
 
 # Notify when a background token refresh installs a new Claude CLI version
 NOTIFY_CLAUDE_UPDATE: bool = _S.get('notify_claude_update', True)
+
+# Codex (OpenAI) provider: enabled by default when a Codex CLI login exists.
+# (The default probes the standard ~/.codex location only; set the key
+# explicitly when using CODEX_HOME.)
+CODEX_ENABLED: bool = _S.get('codex_enabled', (Path.home() / '.codex' / 'auth.json').is_file())
+CODEX_POLL_INTERVAL: int = _S.get('codex_poll_interval', POLL_INTERVAL)
 
 # Currency
 

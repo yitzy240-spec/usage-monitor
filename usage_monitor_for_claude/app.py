@@ -22,11 +22,12 @@ from .api import api_headers, read_access_token
 from .autostart import is_autostart_enabled, set_autostart, sync_autostart_path
 from .cache import UsageCache
 from .claude_cli import PROJECT_URL
+from .codex_poller import CodexPoller
 from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
 from .instance_id import effective_config_dir, is_default_config_dir
 from .settings import (
-    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
+    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, CODEX_ENABLED, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_DOUBLE_CLICK_COMMAND, ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
     POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, get_alert_thresholds,
 )
@@ -113,6 +114,10 @@ class UsageMonitorForClaude:
 
         # Last raw API response (may contain 'error') - for icon and polling decisions
         self._last_response: dict[str, Any] = {}
+
+        # Codex provider: independent poller feeding the popup and HUD
+        self._codex_response: dict[str, Any] = {}
+        self.codex: CodexPoller | None = CodexPoller(on_update=self._on_codex_update) if CODEX_ENABLED else None
 
         # Notification state
         self._prev_utilization: dict[str, float] = {}
@@ -272,7 +277,15 @@ class UsageMonitorForClaude:
 
     def on_quit(self, icon: Any = None, item: Any = None) -> None:
         self.running = False
+        if self.codex is not None:
+            self.codex.stop()
         self.icon.stop()
+
+    # Codex provider
+
+    def _on_codex_update(self, result: dict[str, Any]) -> None:
+        """Store the latest Codex snapshot (rendered by the popup and HUD)."""
+        self._codex_response = result
 
     # Popup
 
@@ -1011,6 +1024,8 @@ class UsageMonitorForClaude:
             if not api_headers():
                 icon.notify(f"{T['warn_no_token']}\n{T['warn_login']}", T['popup_title'])
             threading.Thread(target=watch_theme_change, args=(self._on_theme_changed,), daemon=True).start()
+            if self.codex is not None:
+                self.codex.start()
             self.poll_loop()
         except Exception:
             crash_log(traceback.format_exc())
