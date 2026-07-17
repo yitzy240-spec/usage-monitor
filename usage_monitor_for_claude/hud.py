@@ -28,8 +28,9 @@ from typing import TYPE_CHECKING, Any
 
 import webview  # type: ignore[import-untyped]  # no type stubs available
 
+from .claude_sessions import active_sessions
 from .i18n import T
-from .settings import HUD_HOTKEY, HUD_THRESHOLDS
+from .settings import HUD_HOTKEY, HUD_SESSIONS, HUD_THRESHOLDS
 
 _logger = logging.getLogger(__name__)
 
@@ -184,6 +185,12 @@ class UsageHud:
         snap = self.app.cache.snapshot
         claude = _provider_payload(snap.usage, f"{T['warn_no_token']} {T['warn_login']}")
         codex = _provider_payload(self.app._codex_response, T['codex_login_hint']) if self.app.codex is not None else None
+
+        if HUD_SESSIONS:
+            try:
+                claude['sessions'] = active_sessions()
+            except Exception:
+                claude['sessions'] = []
 
         return {
             'claude': claude,

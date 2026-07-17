@@ -31,7 +31,7 @@ __all__ = [
     'CODEX_ENABLED', 'CODEX_POLL_INTERVAL',
     'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
-    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_THRESHOLDS',
+    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_SESSIONS', 'HUD_THRESHOLDS',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
@@ -58,7 +58,7 @@ _PERCENT_KEYS = frozenset({'alert_time_aware_below'})
 _STRING_KEYS = frozenset({'currency_symbol', 'language', 'hud_hotkey'})
 _VALID_TIME_FORMATS = frozenset({'24h', '12h'})
 _COMMAND_KEYS = frozenset({'on_double_click_command', 'on_reset_command', 'on_startup_command', 'on_threshold_command'})
-_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update', 'codex_enabled', 'hud_enabled'})
+_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update', 'codex_enabled', 'hud_enabled', 'hud_sessions'})
 _STRING_LIST_KEYS = frozenset({'tooltip_fields', 'compact_hide'})
 _WILDCARD_STRING_LIST_KEYS = frozenset({'popup_fields'})
 _VALID_BAR_MODES = frozenset({'utilization', 'overage'})
@@ -338,6 +338,8 @@ NOTIFY_CLAUDE_UPDATE: bool = _S.get('notify_claude_update', True)
 HUD_ENABLED: bool = _S.get('hud_enabled', True)
 HUD_HOTKEY: str = _S.get('hud_hotkey', 'ctrl+alt+space')
 HUD_THRESHOLDS: list[float] = _S.get('hud_thresholds', [70, 90])
+# Show the context-window fill of currently active Claude Code sessions
+HUD_SESSIONS: bool = _S.get('hud_sessions', True)
 
 # Codex (OpenAI) provider: enabled by default when a Codex CLI login exists.
 # (The default probes the standard ~/.codex location only; set the key

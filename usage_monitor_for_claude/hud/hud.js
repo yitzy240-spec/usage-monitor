@@ -67,11 +67,11 @@ function severityColor(pct, thresholds) {
     return 'var(--ink)';
 }
 
-// Bars always fill in the provider's brand color - risk is signalled by
-// the peak number, the sprite mood, and the elapsed-time marker instead,
-// so a full bar never gets confused with a different provider's hue.
+// Bars fill in the provider's brand color until the critical threshold,
+// then switch to the same true red as the peak numbers.
 function barColor(bar, thresholds, brand) {
-    return brand;
+    const [, hi] = thresholds;
+    return bar.fill_pct * 100 >= hi ? 'var(--crit)' : brand;
 }
 
 function renderRows(container, bars, thresholds, brand) {
@@ -140,9 +140,53 @@ function renderProvider(key, provider, thresholds, brand) {
 
     renderRows(els[`${lower}Rows`], provider.usage || [], thresholds, brand);
 
+    const ctxEl = els[`${lower}Ctx`];
+    if (ctxEl) renderContext(ctxEl, provider.sessions || [], thresholds, brand);
+
     const errorEl = els[`${lower}Error`];
     errorEl.textContent = provider.error || '';
     errorEl.style.display = provider.error ? 'block' : 'none';
+}
+
+// Context-window fill of active Claude Code sessions ("fbcr · 432k 43%").
+function renderContext(container, sessions, thresholds, brand) {
+    container.classList.toggle('visible', !!sessions.length);
+    if (!sessions.length) {
+        container.replaceChildren();
+        return;
+    }
+
+    const heading = document.createElement('div');
+    heading.className = 'ctx-heading';
+    heading.textContent = 'context';
+
+    container.replaceChildren(heading, ...sessions.map((s) => {
+        const row = document.createElement('div');
+        row.className = 'ctx-row';
+
+        const name = document.createElement('span');
+        name.className = 'ctx-name';
+        name.textContent = s.name;
+
+        const meta = document.createElement('span');
+        meta.className = 'ctx-meta';
+        const tokens = s.tokens >= 1000 ? `${Math.round(s.tokens / 1000)}k` : `${s.tokens}`;
+        const pct = document.createElement('b');
+        pct.textContent = `${s.pct}%`;
+        meta.append(`${tokens} · `, pct);
+
+        const bar = document.createElement('div');
+        bar.className = 'ctx-bar';
+        const fill = document.createElement('div');
+        fill.className = 'ctx-fill';
+        fill.style.setProperty('--bar-color', s.pct >= thresholds[1] ? 'var(--crit)' : brand);
+        fill.dataset.target = `${Math.min(s.pct, 100)}%`;
+        fill.style.width = fill.dataset.target;
+        bar.appendChild(fill);
+
+        row.append(name, meta, bar);
+        return row;
+    }));
 }
 
 function updateData(data) {
@@ -189,6 +233,7 @@ function init(config) {
         codexSprite: document.getElementById('codexSprite'),
         providerClaude: document.getElementById('providerClaude'),
         claudeRows: document.getElementById('claudeRows'),
+        claudeCtx: document.getElementById('claudeCtx'),
         claudePlan: document.getElementById('claudePlan'),
         claudePeak: document.getElementById('claudePeak'),
         claudeError: document.getElementById('claudeError'),
