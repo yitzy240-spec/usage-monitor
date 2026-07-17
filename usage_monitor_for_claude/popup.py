@@ -68,6 +68,31 @@ def _usage_entries(usage: dict[str, Any]) -> list[tuple[str, dict[str, Any] | No
     return [(popup_label(key), usage.get(key), field_period(key), key) for key in fields]
 
 
+def _usage_bar_list(usage: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build the JSON bar-entry list for a quota dict (Claude or Codex)."""
+    bars = []
+    for label, entry, period, field in _usage_entries(usage):
+        if not entry or not isinstance(entry, dict) or entry.get('utilization') is None:
+            continue
+        pct = entry.get('utilization', 0) or 0
+        resets_at = entry.get('resets_at', '')
+        time_pct = elapsed_pct(resets_at, period) if period else None
+        warn = pct >= 100 or (time_pct is not None and pct > time_pct)
+        marker_rel = max(0.0, min(1.0, time_pct / 100)) if time_pct is not None else None
+
+        bars.append({
+            'key': field,
+            'label': label,
+            'pct_text': f'{pct:.0f}%',
+            'fill_pct': max(0.0, min(1.0, pct / 100)),
+            'warn': warn,
+            'reset_text': time_until(resets_at) if resets_at else '',
+            'dividers': divider_positions(resets_at, period) if period else [],
+            'marker_rel': marker_rel,
+        })
+    return bars
+
+
 def _codex_to_dict(codex: dict[str, Any] | None) -> dict[str, Any] | None:
     """Convert a Codex usage snapshot to a JSON-serializable dict for the popup JS.
 
@@ -78,26 +103,7 @@ def _codex_to_dict(codex: dict[str, Any] | None) -> dict[str, Any] | None:
     if not codex:
         return None
 
-    usage = []
-    for label, entry, period, field in _usage_entries(codex):
-        if not entry or not isinstance(entry, dict) or entry.get('utilization') is None:
-            continue
-        pct = entry.get('utilization', 0) or 0
-        resets_at = entry.get('resets_at', '')
-        time_pct = elapsed_pct(resets_at, period) if period else None
-        warn = pct >= 100 or (time_pct is not None and pct > time_pct)
-        marker_rel = max(0.0, min(1.0, time_pct / 100)) if time_pct is not None else None
-
-        usage.append({
-            'key': field,
-            'label': label,
-            'pct_text': f'{pct:.0f}%',
-            'fill_pct': max(0.0, min(1.0, pct / 100)),
-            'warn': warn,
-            'reset_text': time_until(resets_at) if resets_at else '',
-            'dividers': divider_positions(resets_at, period) if period else [],
-            'marker_rel': marker_rel,
-        })
+    usage = _usage_bar_list(codex)
 
     error = None
     if codex.get('auth_error'):
@@ -135,27 +141,7 @@ def _snapshot_to_dict(
         }
 
     # Usage bars
-    usage = []
-    if snap.usage:
-        for label, entry, period, field in _usage_entries(snap.usage):
-            if not entry or entry.get('utilization') is None:
-                continue
-            pct = entry.get('utilization', 0) or 0
-            resets_at = entry.get('resets_at', '')
-            time_pct = elapsed_pct(resets_at, period) if period else None
-            warn = pct >= 100 or (time_pct is not None and pct > time_pct)
-            marker_rel = max(0.0, min(1.0, time_pct / 100)) if time_pct is not None else None
-
-            usage.append({
-                'key': field,
-                'label': label,
-                'pct_text': f'{pct:.0f}%',
-                'fill_pct': max(0.0, min(1.0, pct / 100)),
-                'warn': warn,
-                'reset_text': time_until(resets_at) if resets_at else '',
-                'dividers': divider_positions(resets_at, period) if period else [],
-                'marker_rel': marker_rel,
-            })
+    usage = _usage_bar_list(snap.usage) if snap.usage else []
 
     # Extra usage
     extra = None

@@ -26,8 +26,9 @@ from .codex_poller import CodexPoller
 from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
 from .instance_id import effective_config_dir, is_default_config_dir
+from .hud import UsageHud
 from .settings import (
-    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, CODEX_ENABLED, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
+    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, CODEX_ENABLED, HUD_ENABLED, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_DOUBLE_CLICK_COMMAND, ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
     POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, get_alert_thresholds,
 )
@@ -118,6 +119,9 @@ class UsageMonitorForClaude:
         # Codex provider: independent poller feeding the popup and HUD
         self._codex_response: dict[str, Any] = {}
         self.codex: CodexPoller | None = CodexPoller(on_update=self._on_codex_update) if CODEX_ENABLED else None
+
+        # Hold-to-peek HUD (global hotkey)
+        self.hud: UsageHud | None = UsageHud(self) if HUD_ENABLED else None
 
         # Notification state
         self._prev_utilization: dict[str, float] = {}
@@ -279,6 +283,8 @@ class UsageMonitorForClaude:
         self.running = False
         if self.codex is not None:
             self.codex.stop()
+        if self.hud is not None:
+            self.hud.stop()
         self.icon.stop()
 
     # Codex provider
@@ -1026,6 +1032,8 @@ class UsageMonitorForClaude:
             threading.Thread(target=watch_theme_change, args=(self._on_theme_changed,), daemon=True).start()
             if self.codex is not None:
                 self.codex.start()
+            if self.hud is not None:
+                self.hud.start()
             self.poll_loop()
         except Exception:
             crash_log(traceback.format_exc())

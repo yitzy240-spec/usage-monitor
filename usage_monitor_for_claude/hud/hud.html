@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<main id="card">
+    <header>
+        <div id="mascotBox">
+            <div id="mascot"></div>
+            <div id="sweatDrop"></div>
+        </div>
+        <div id="headText">
+            <span id="wordmark">usage</span>
+            <span id="tagline"></span>
+        </div>
+        <div id="worstBox">
+            <span id="worstPct">–</span>
+            <span id="worstLabel">peak</span>
+        </div>
+        <div class="controls">
+            <button type="button" id="expandBtn" title="Details">⤢</button>
+            <button type="button" id="closeBtn" title="Close">×</button>
+        </div>
+    </header>
+
+    <section class="provider" id="providerClaude">
+        <div class="provider-head">
+            <span class="provider-name" id="claudeName"></span>
+            <span class="provider-plan" id="claudePlan"></span>
+        </div>
+        <div class="rows" id="claudeRows"></div>
+        <div class="provider-error" id="claudeError"></div>
+    </section>
+
+    <section class="provider" id="providerCodex">
+        <div class="provider-head">
+            <span class="provider-name" id="codexName"></span>
+            <span class="provider-plan" id="codexPlan"></span>
+        </div>
+        <div class="rows" id="codexRows"></div>
+        <div class="provider-error" id="codexError"></div>
+    </section>
+
+    <footer>
+        <span id="pinState"></span>
+        <span id="hint">click to pin · esc to close</span>
+    </footer>
+</main>
+<script src="hud.js"></script>
+</body>
+</html>
