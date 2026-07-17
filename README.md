@@ -1,4 +1,12 @@
-# Usage Monitor for Claude
+# Usage Monitor for Claude — Codex + HUD fork
+
+> [!NOTE]
+> **This is a personal fork of [jens-duttke/usage-monitor-for-claude](https://github.com/jens-duttke/usage-monitor-for-claude)** (MIT) adding:
+>
+> - **Codex (OpenAI) provider** — the detail popup and HUD also show your ChatGPT/Codex rate-limit windows, read from the Codex CLI's `~/.codex/auth.json` login (with safe rotating-token refresh and atomic write-back). Settings: `codex_enabled`, `codex_poll_interval`.
+> - **Hold-to-peek HUD** — hold `Ctrl+Alt+Space` (configurable via `hud_hotkey`) and a polished usage widget springs up above the tray showing both providers; release to hide, quick-tap or click to pin, `Esc` to close. Includes a pixel Claude mascot whose mood tracks your worst limit (happy → sweating → panicking). Settings: `hud_enabled`, `hud_hotkey`, `hud_thresholds`.
+>
+> New modules: `codex_api.py`, `codex_poller.py`, `hud.py` + `hud/`. Everything below this note is the upstream README.
 
 [![Feature Ideas](https://img.shields.io/badge/Feature_Ideas-Vote_%26_Discuss-blue?style=for-the-badge&logo=github)](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/categories/ideas)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4?style=for-the-badge&logo=github)](https://github.com/sponsors/jens-duttke)

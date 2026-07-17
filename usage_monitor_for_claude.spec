@@ -16,6 +16,9 @@ a = Analysis(
         ('usage_monitor_for_claude/popup/popup.html', 'usage_monitor_for_claude/popup'),
         ('usage_monitor_for_claude/popup/popup.css', 'usage_monitor_for_claude/popup'),
         ('usage_monitor_for_claude/popup/popup.js', 'usage_monitor_for_claude/popup'),
+        ('usage_monitor_for_claude/hud/hud.html', 'usage_monitor_for_claude/hud'),
+        ('usage_monitor_for_claude/hud/hud.css', 'usage_monitor_for_claude/hud'),
+        ('usage_monitor_for_claude/hud/hud.js', 'usage_monitor_for_claude/hud'),
     ],
     hiddenimports=[
         'pystray._win32',
