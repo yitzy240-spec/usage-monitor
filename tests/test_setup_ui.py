@@ -68,13 +68,15 @@ class TestSettingsWritePath(unittest.TestCase):
     """settings_write_path falls back to the app dir when no file exists."""
 
     def test_prefers_existing_file(self):
+        # Uses the custom-config-dir slot (first in the search order) so the
+        # test stays hermetic regardless of real settings files on disk.
         from usage_monitor_for_claude.settings import SETTINGS_FILENAME, settings_write_path
         with TemporaryDirectory() as tmp:
-            home_file = Path(tmp) / '.claude' / SETTINGS_FILENAME
-            home_file.parent.mkdir(parents=True)
-            home_file.write_text('{}', encoding='utf-8')
-            with patch('usage_monitor_for_claude.settings.Path.home', return_value=Path(tmp)):
-                self.assertEqual(settings_write_path(), home_file)
+            custom_file = Path(tmp) / SETTINGS_FILENAME
+            custom_file.write_text('{}', encoding='utf-8')
+            with patch('usage_monitor_for_claude.settings.is_default_config_dir', return_value=False):
+                with patch('usage_monitor_for_claude.settings.effective_config_dir', return_value=Path(tmp)):
+                    self.assertEqual(settings_write_path(), custom_file)
 
 
 if __name__ == '__main__':

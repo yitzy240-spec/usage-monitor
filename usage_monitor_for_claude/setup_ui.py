@@ -18,6 +18,8 @@ import).
 """
 from __future__ import annotations
 
+import ctypes
+import ctypes.wintypes
 import json
 import subprocess
 import sys
@@ -201,8 +203,42 @@ class SetupWindow:
             background_color='#1A1915',
             js_api=_SetupApi(self),
         )
+        self._window.events.loaded += self._position_near_tray
         self._window.events.closed += self._closed.set
         self._closed.wait()
+
+    def _position_near_tray(self) -> None:
+        """Dock bottom-right above the tray, where the detail panel lives."""
+        try:
+            hwnd = self._window.native.Handle.ToInt32()
+            tray = ctypes.windll.user32.FindWindowW('Shell_TrayWnd', None)
+            hmon = ctypes.windll.user32.MonitorFromWindow(tray, 2)  # MONITOR_DEFAULTTONEAREST
+
+            class _MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ('cbSize', ctypes.wintypes.DWORD),
+                    ('rcMonitor', ctypes.wintypes.RECT),
+                    ('rcWork', ctypes.wintypes.RECT),
+                    ('dwFlags', ctypes.wintypes.DWORD),
+                ]
+
+            info = _MONITORINFO()
+            info.cbSize = ctypes.sizeof(_MONITORINFO)
+            ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(info))
+            work = info.rcWork
+
+            rect = ctypes.wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+
+            dpi = ctypes.windll.user32.GetDpiForWindow(hwnd) or ctypes.windll.user32.GetDpiForSystem()
+            margin = int(12 * dpi / 96)
+            x = work.right - width - margin
+            y = work.bottom - height - margin
+            ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)  # NOSIZE|NOZORDER|NOACTIVATE
+        except Exception:
+            pass
 
     def close(self) -> None:
         try:

@@ -328,10 +328,6 @@ function init(config) {
         e.stopPropagation();
         pywebview.api.close();
     });
-    document.getElementById('expandBtn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        pywebview.api.open_popup();
-    });
 
     // Pin is a sticky mode: on -> summons stay on screen; off -> the HUD
     // lives only while the hotkey is held.

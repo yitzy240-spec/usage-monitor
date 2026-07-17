@@ -44,6 +44,77 @@ async function validateHotkey() {
     return ok;
 }
 
+// ---------------------------------------------------------------------------
+// Hotkey recorder: click the box, press the chord - no typing key names.
+// ---------------------------------------------------------------------------
+
+let lastValidHotkey = '';
+
+const NAMED_CODES = {
+    Space: 'space', Tab: 'tab', Enter: 'enter', Backspace: 'backspace',
+    Home: 'home', End: 'end', PageUp: 'pageup', PageDown: 'pagedown',
+    Insert: 'insert', Delete: 'delete',
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\',
+};
+
+function mainKeyToken(e) {
+    const c = e.code;
+    if (/^Key[A-Z]$/.test(c)) return c[3].toLowerCase();
+    if (/^Digit[0-9]$/.test(c)) return c[5];
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(c)) return c.toLowerCase();
+    return NAMED_CODES[c] || null;
+}
+
+function setupHotkeyRecorder() {
+    const input = $('hotkeyInput');
+    input.readOnly = true;
+
+    input.addEventListener('focus', () => {
+        input.dataset.prev = input.value;
+        input.value = '';
+        input.placeholder = 'press keys…';
+    });
+
+    input.addEventListener('keydown', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+            input.value = input.dataset.prev || lastValidHotkey;
+            input.blur();
+            return;
+        }
+
+        const mods = [];
+        if (e.ctrlKey) mods.push('ctrl');
+        if (e.altKey) mods.push('alt');
+        if (e.shiftKey) mods.push('shift');
+        if (e.metaKey) mods.push('win');
+
+        const main = mainKeyToken(e);
+        if (!main) {
+            // Modifiers held, chord not complete yet.
+            input.value = mods.length ? `${mods.join('+')}+…` : '';
+            return;
+        }
+
+        input.value = [...mods, main].join('+');
+        if (await validateHotkey()) {
+            lastValidHotkey = input.value;
+            input.blur();
+        }
+    });
+
+    input.addEventListener('blur', async () => {
+        if (!input.value || input.value.endsWith('…') || !(await pywebview.api.check_hotkey(input.value))) {
+            input.value = lastValidHotkey || input.dataset.prev || '';
+        }
+        input.classList.remove('invalid');
+        $('hotkeyError').classList.remove('visible');
+    });
+}
+
 async function save() {
     if (!(await validateHotkey())) return false;
     dirty = settingsChanged();
@@ -60,6 +131,8 @@ async function init() {
     renderAccounts(state.accounts);
 
     $('hotkeyInput').value = state.settings.hud_hotkey;
+    lastValidHotkey = state.settings.hud_hotkey;
+    setupHotkeyRecorder();
     $('lingerInput').value = state.settings.hud_linger;
     $('lingerVal').textContent = `${state.settings.hud_linger}s`;
     $('sessionsInput').checked = state.settings.hud_sessions;
@@ -87,7 +160,6 @@ async function init() {
     $('lingerInput').addEventListener('input', () => {
         $('lingerVal').textContent = `${$('lingerInput').value}s`;
     });
-    $('hotkeyInput').addEventListener('input', validateHotkey);
     $('autostartInput').addEventListener('change', async () => {
         $('autostartInput').checked = await pywebview.api.set_autostart($('autostartInput').checked);
     });

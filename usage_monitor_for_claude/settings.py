@@ -36,7 +36,7 @@ __all__ = [
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
     'POLL_ERROR', 'POLL_FAST', 'POLL_FAST_EXTRA', 'POLL_INTERVAL',
-    'POPUP_FIELDS', 'SETTINGS_FILENAME', 'TIME_FORMAT', 'TOOLTIP_FIELDS',
+    'POPUP_FIELDS', 'SETTINGS_FILENAME', 'TIME_FORMAT', 'TOOLTIP_FIELDS', 'TRAY_STYLE',
     'get_alert_thresholds', 'settings_write_path',
 ]
 
@@ -196,6 +196,11 @@ def _validate(data: dict, path: Path) -> dict:
         elif key == 'time_format':
             if value not in _VALID_TIME_FORMATS:
                 errors.append(f'  {key}: must be "24h" or "12h", got {value!r}')
+                drop.append(key)
+
+        elif key == 'tray_style':
+            if value not in ('clawd', 'bars'):
+                errors.append(f'  {key}: must be "clawd" or "bars", got {value!r}')
                 drop.append(key)
 
         elif key in _COMMAND_KEYS:
@@ -368,6 +373,10 @@ HUD_SESSIONS: bool = _S.get('hud_sessions', True)
 # Seconds the unpinned HUD lingers after the hotkey is released before
 # fading out (0 = hide immediately). Hovering it pauses the countdown.
 HUD_LINGER: int = _S.get('hud_linger', 5)
+
+# Tray icon style: 'clawd' (severity-tinted mascot + brand bars) or the
+# upstream 'bars'.
+TRAY_STYLE: str = _S.get('tray_style', 'clawd')
 
 # Codex (OpenAI) provider: enabled by default when a Codex CLI login exists.
 # (The default probes the standard ~/.codex location only; set the key

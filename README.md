@@ -4,9 +4,11 @@
 > **This is a personal fork of [jens-duttke/usage-monitor-for-claude](https://github.com/jens-duttke/usage-monitor-for-claude)** (MIT) adding:
 >
 > - **Codex (OpenAI) provider** — the detail popup and HUD also show your ChatGPT/Codex rate-limit windows, read from the Codex CLI's `~/.codex/auth.json` login (with safe rotating-token refresh and atomic write-back). Settings: `codex_enabled`, `codex_poll_interval`.
-> - **Hold-to-peek HUD** — hold `Ctrl+Alt+Space` (configurable via `hud_hotkey`) and a polished usage widget springs up above the tray showing both providers; release to hide, quick-tap or click to pin, `Esc` to close. Includes a pixel Claude mascot whose mood tracks your worst limit (happy → sweating → panicking). Settings: `hud_enabled`, `hud_hotkey`, `hud_thresholds`.
+> - **Hold-to-peek HUD** — hold `Ctrl+Alt+Space` (configurable) and a polished usage widget springs up above the tray showing both providers, with per-provider mascots (Clawd + the official Codex companion) whose moods track each subscription's worst limit and burn pace, plus context-window rings for your active Claude Code sessions. Release to hide (5s hover-pausable linger), pin button for sticky mode, `Esc` to close.
+> - **First-run wizard + Settings window** — onboarding checks both CLI logins with fix-it buttons, records your hotkey by pressing it, and offers autostart; tray → Settings… later. No in-app OAuth: the `claude`/`codex` CLIs own sign-in.
+> - **Clawd tray icon** — severity-tinted mascot over Claude/Codex mini bars (`tray_style: "bars"` restores upstream's icon).
 >
-> New modules: `codex_api.py`, `codex_poller.py`, `hud.py` + `hud/`. Everything below this note is the upstream README.
+> New modules: `codex_api.py`, `codex_poller.py`, `claude_sessions.py`, `hud.py` + `hud/`, `setup_ui.py` + `setup/`, `clawd_icon.py`. Everything below this note is the upstream README.
 
 [![Feature Ideas](https://img.shields.io/badge/Feature_Ideas-Vote_%26_Discuss-blue?style=for-the-badge&logo=github)](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/categories/ideas)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4?style=for-the-badge&logo=github)](https://github.com/sponsors/jens-duttke)

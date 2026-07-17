@@ -22,6 +22,7 @@ from .api import api_headers, read_access_token
 from .autostart import is_autostart_enabled, set_autostart, sync_autostart_path
 from .cache import UsageCache
 from .claude_cli import PROJECT_URL
+from .clawd_icon import create_clawd_icon
 from .codex_poller import CodexPoller
 from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
@@ -31,7 +32,7 @@ from .setup_ui import SetupWindow, should_show_onboarding
 from .settings import (
     ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, CODEX_ENABLED, HUD_ENABLED, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_DOUBLE_CLICK_COMMAND, ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
-    POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, get_alert_thresholds,
+    POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, TRAY_STYLE, get_alert_thresholds,
 )
 from .formatting import elapsed_pct, field_period, format_credits, format_tooltip, parse_field_name, popup_label
 from .i18n import T
@@ -201,6 +202,13 @@ class UsageMonitorForClaude:
     # Menu actions
 
     def on_show_popup(self, icon: Any = None, item: Any = None) -> None:
+        # The fork's own HUD is the app's face: tray clicks summon it
+        # (sticky - nothing hides it until Esc/close/hotkey). The upstream
+        # popup only appears if the HUD is disabled.
+        if self.hud is not None:
+            threading.Thread(target=self.hud.show, daemon=True).start()
+            return
+
         with self._popup_lock:
             if self._popup_open:
                 return
@@ -315,6 +323,10 @@ class UsageMonitorForClaude:
     def _on_codex_update(self, result: dict[str, Any]) -> None:
         """Store the latest Codex snapshot (rendered by the popup and HUD)."""
         self._codex_response = result
+        # The Clawd tray icon carries a Codex bar; refresh it on Codex polls
+        # too (Claude's own update path re-renders on its own cadence).
+        if TRAY_STYLE == 'clawd' and self._last_response and 'error' not in self._last_response:
+            self._render_tray()
 
     # Popup
 
@@ -428,6 +440,8 @@ class UsageMonitorForClaude:
         data = self._last_response
         if 'error' in data:
             self.icon.icon = create_status_image('C!' if data.get('auth_error') else '!', self._light_taskbar)
+        elif TRAY_STYLE == 'clawd':
+            self.icon.icon = self._clawd_tray_image(data)
         else:
             top_field, top_mode = ICON_FIELDS[0].split(':', 1) if ':' in ICON_FIELDS[0] else (ICON_FIELDS[0], 'utilization')
             bottom_field, bottom_mode = ICON_FIELDS[1].split(':', 1) if ':' in ICON_FIELDS[1] else (ICON_FIELDS[1], 'utilization')
@@ -456,6 +470,22 @@ class UsageMonitorForClaude:
                 extra_usage_available=extra_usage_available,
             )
         self.icon.title = self._tooltip_prefix + format_tooltip(data)
+
+    def _clawd_tray_image(self, data: dict[str, Any]) -> Any:
+        """Build the Clawd tray icon from both providers' current usage."""
+        def quota_pcts(source: dict[str, Any]) -> list[float]:
+            return [
+                value.get('utilization', 0) or 0
+                for key, value in source.items()
+                if key != 'extra_usage' and isinstance(value, dict) and value.get('utilization') is not None
+            ]
+
+        claude_pcts = quota_pcts(data)
+        codex_pcts = quota_pcts(self._codex_response) if self.codex is not None else []
+        worst = max(claude_pcts + codex_pcts, default=0)
+        session = (data.get('five_hour') or {}).get('utilization', 0) or 0
+        codex_worst = max(codex_pcts, default=None) if codex_pcts else None
+        return create_clawd_icon(worst, session, codex_worst, self._light_taskbar)
 
     def _on_theme_changed(self) -> None:
         """Re-render the tray icon when the Windows theme changes."""

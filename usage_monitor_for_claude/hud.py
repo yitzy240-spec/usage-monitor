@@ -425,7 +425,3 @@ class _HudApi:
 
     def close(self) -> None:
         self._hud.hide()
-
-    def open_popup(self) -> None:
-        self._hud.hide()
-        self._hud.app.on_show_popup()

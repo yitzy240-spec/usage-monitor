@@ -883,10 +883,15 @@ class TestFastPolling(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestRenderTray(unittest.TestCase):
-    """Tests for _render_tray() icon and tooltip rendering."""
+    """Tests for _render_tray() icon and tooltip rendering (upstream bars style)."""
 
     def setUp(self):
         self.app = _make_app()
+        # These tests pin the upstream bar-icon path; the fork's default
+        # tray_style is 'clawd' (covered by TestClawdTrayIcon below).
+        self._style = patch('usage_monitor_for_claude.app.TRAY_STYLE', 'bars')
+        self._style.start()
+        self.addCleanup(self._style.stop)
 
     def tearDown(self):
         _cleanup(self.app)
@@ -1088,11 +1093,46 @@ class TestRenderTray(unittest.TestCase):
 # _on_theme_changed
 # ---------------------------------------------------------------------------
 
+class TestClawdTrayIcon(unittest.TestCase):
+    """Tests for the fork's default clawd tray style."""
+
+    def setUp(self):
+        self.app = _make_app()
+
+    def tearDown(self):
+        self.app = None
+
+    def test_clawd_branch_renders_both_providers(self):
+        self.app._last_response = {
+            'five_hour': {'utilization': 47.0, 'resets_at': None},
+            'seven_day': {'utilization': 20.0, 'resets_at': None},
+        }
+        self.app._codex_response = {'seven_day': {'utilization': 100.0, 'resets_at': None}}
+        with patch('usage_monitor_for_claude.app.TRAY_STYLE', 'clawd'):
+            with patch('usage_monitor_for_claude.app.create_clawd_icon') as clawd:
+                self.app._render_tray()
+        args = clawd.call_args.args
+        self.assertEqual(args[0], 100.0)  # worst across providers
+        self.assertEqual(args[1], 47.0)   # claude session
+        self.assertEqual(args[2], 100.0)  # codex worst
+
+    def test_clawd_branch_without_codex(self):
+        self.app.codex = None
+        self.app._last_response = {'five_hour': {'utilization': 10.0, 'resets_at': None}}
+        with patch('usage_monitor_for_claude.app.TRAY_STYLE', 'clawd'):
+            with patch('usage_monitor_for_claude.app.create_clawd_icon') as clawd:
+                self.app._render_tray()
+        self.assertIsNone(clawd.call_args.args[2])
+
+
 class TestOnThemeChanged(unittest.TestCase):
     """Tests for _on_theme_changed() theme switch handling."""
 
     def setUp(self):
         self.app = _make_app()
+        self._style = patch('usage_monitor_for_claude.app.TRAY_STYLE', 'bars')
+        self._style.start()
+        self.addCleanup(self._style.stop)
 
     def tearDown(self):
         _cleanup(self.app)
@@ -1472,11 +1512,20 @@ class TestMenuActions(unittest.TestCase):
         _cleanup(self.app)
 
     def test_on_show_popup_guards_against_double_open(self):
-        """on_show_popup() does nothing when popup is already open."""
+        """on_show_popup() does nothing when popup is already open (HUD off)."""
+        self.app.hud = None  # upstream popup path only runs without the HUD
         self.app._popup_open = True
         with patch('usage_monitor_for_claude.app.threading.Thread') as mock_thread:
             self.app.on_show_popup()
             mock_thread.assert_not_called()
+
+    def test_on_show_popup_prefers_hud(self):
+        """With the HUD enabled, tray clicks summon it instead of the popup."""
+        self.app.hud = object.__new__(type('H', (), {'show': lambda self: None}))
+        with patch('usage_monitor_for_claude.app.threading.Thread') as mock_thread:
+            self.app.on_show_popup()
+            mock_thread.assert_called_once()
+            self.assertFalse(self.app._popup_open)
 
     def test_on_quit_stops_running(self):
         """on_quit() sets running to False and stops the icon."""
