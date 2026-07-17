@@ -47,9 +47,6 @@ _WM_HOTKEY = 0x0312
 _WM_QUIT = 0x0012
 _MOD_NOREPEAT = 0x4000
 _HOTKEY_ID = 0xB00
-# Held shorter than this counts as a tap and pins the HUD open, so a
-# quick press never produces a useless flash.
-_TAP_SECONDS = 0.35
 
 _MODIFIERS = {'alt': 0x1, 'ctrl': 0x2, 'control': 0x2, 'shift': 0x4, 'win': 0x8}
 _NAMED_VKS = {
@@ -159,7 +156,9 @@ class UsageHud:
         self._hwnd = 0
         self._height = self.HEIGHT  # logical px, grows with content
         self._visible = False
-        self._pinned = False
+        # Sticky mode set by the pin button: summons stay on screen instead
+        # of hiding on hotkey release.  Survives hide/show cycles.
+        self._pin_mode = False
         self._lock = threading.Lock()
         self._loaded = threading.Event()
         self._pump_tid = 0
@@ -196,7 +195,7 @@ class UsageHud:
             'claude': claude,
             'codex': codex,
             'thresholds': HUD_THRESHOLDS,
-            'pinned': self._pinned,
+            'pin_mode': self._pin_mode,
         }
 
     # Window
@@ -226,7 +225,6 @@ class UsageHud:
         self._window = None
         self._hwnd = 0
         self._visible = False
-        self._pinned = False
         self._loaded.clear()
         self._refresh_stop.set()
 
@@ -280,14 +278,13 @@ class UsageHud:
         ok = ctypes.windll.user32.SetWindowPos(self._hwnd, 0, x, y, width, height, 0x0010 | 0x0004)  # SWP_NOACTIVATE | SWP_NOZORDER
         _logger.info('hud: position dpi=%s -> (%s,%s %sx%s) ok=%s', dpi, x, y, width, height, ok)
 
-    def show(self, pinned: bool = False) -> None:
+    def show(self) -> None:
         """Show the HUD without activating it and start live refresh."""
         with self._lock:
             if self._window is None:
                 self._create_window()
             if self._window is None or not self._loaded.wait(timeout=5):
                 return
-            self._pinned = pinned
             self._push_data()
             self._position()
             ctypes.windll.user32.ShowWindow(self._hwnd, _SW_SHOWNA)
@@ -308,13 +305,12 @@ class UsageHud:
             if not self._visible:
                 return
             self._visible = False
-            self._pinned = False
             self._refresh_stop.set()
             ctypes.windll.user32.ShowWindow(self._hwnd, _SW_HIDE)
 
-    def _pin(self) -> None:
-        self._pinned = True
-        self._push_data()
+    def set_pin_mode(self, enabled: bool) -> bool:
+        self._pin_mode = bool(enabled)
+        return self._pin_mode
 
     def _set_height(self, height: int) -> None:
         """Grow/shrink the window to the content height reported by JS.
@@ -369,29 +365,28 @@ class UsageHud:
             self._pump_tid = 0
 
     def _on_hotkey(self, vk: int) -> None:
-        """Handle one hotkey press: peek while held, pin on tap, toggle off."""
+        """Handle one hotkey press.
+
+        Pin mode off: hold-to-peek - the HUD lives exactly as long as the
+        keys are held.  Pin mode on: a trigger leaves the HUD on screen
+        until the next trigger, Escape, or the close button.
+        """
         # Re-sync with reality: the window may have died or been hidden
         # behind our back, and a stale True would turn a summon into a no-op.
         if self._visible and not (self._hwnd and ctypes.windll.user32.IsWindowVisible(self._hwnd)):
             self._visible = False
-            self._pinned = False
 
         if self._visible:
             self.hide()
             return
 
         self.show()
-        pressed_at = time.time()
         while ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000:
             time.sleep(0.03)
             if not self._visible:  # closed from the HUD while still holding
                 return
 
-        if self._pinned:
-            return
-        if time.time() - pressed_at < _TAP_SECONDS:
-            self._pin()  # a quick tap pins instead of flashing
-        else:
+        if not self._pin_mode:
             self.hide()
 
 
@@ -401,9 +396,8 @@ class _HudApi:
     def __init__(self, hud: UsageHud) -> None:
         self._hud = hud
 
-    def pin(self) -> bool:
-        self._hud._pin()
-        return True
+    def set_pin_mode(self, enabled: bool) -> bool:
+        return self._hud.set_pin_mode(enabled)
 
     def report_height(self, height: int) -> None:
         if height:

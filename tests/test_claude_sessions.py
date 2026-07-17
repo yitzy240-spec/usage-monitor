@@ -83,14 +83,17 @@ class TestActiveSessions(unittest.TestCase):
     def test_filters_stale_and_sorts_newest_first(self):
         with TemporaryDirectory() as tmp:
             projects = Path(tmp) / 'projects'
-            _write_session(projects, 'proj-a', 'old', [_entry(cwd='C:\\x\\old')], age_seconds=3600)
-            _write_session(projects, 'proj-a', 'older-active', [_entry(cwd='C:\\x\\beta')], age_seconds=120)
+            _write_session(projects, 'proj-a', 'old', [_entry(cwd='C:\\x\\old')], age_seconds=7200)
+            _write_session(projects, 'proj-a', 'older-active', [_entry(cwd='C:\\x\\beta')], age_seconds=1200)
             _write_session(projects, 'proj-b', 'newest', [_entry(cwd='C:\\x\\alpha')], age_seconds=10)
 
             with patch('usage_monitor_for_claude.api.CLAUDE_CONFIG_DIR', Path(tmp)):
                 sessions = active_sessions()
 
         self.assertEqual([s['name'] for s in sessions], ['alpha', 'beta'])
+        self.assertFalse(sessions[0]['idle'])
+        self.assertTrue(sessions[1]['idle'])
+        self.assertGreaterEqual(sessions[1]['age_seconds'], 1100)
 
     def test_missing_projects_dir(self):
         with TemporaryDirectory() as tmp:

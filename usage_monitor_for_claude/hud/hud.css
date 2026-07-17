@@ -105,6 +105,10 @@ header {
 
 .controls button:hover { color: var(--ink); background: rgba(240, 238, 229, 0.08); }
 
+.controls button svg { width: 12px; height: 12px; display: block; }
+
+#pinBtn.pinned { color: var(--orange); }
+
 /* ---- Providers ---- */
 
 .provider {
@@ -273,7 +277,11 @@ header {
     align-items: center;
     gap: 7px;
     min-width: 0;
+    transition: opacity 300ms;
 }
+
+/* Quiet for a while: context still alive, session just not talking. */
+.ctx-item.idle { opacity: 0.5; }
 
 .ctx-ring { flex: none; }
 

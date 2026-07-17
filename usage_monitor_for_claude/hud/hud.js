@@ -204,8 +204,10 @@ function renderContext(container, sessions, thresholds, brand) {
     container.replaceChildren(heading, ...sessions.map((s) => {
         const item = document.createElement('div');
         item.className = 'ctx-item';
+        item.classList.toggle('idle', !!s.idle);
         const tokens = s.tokens >= 1000 ? `${Math.round(s.tokens / 1000)}k` : `${s.tokens}`;
-        item.title = `${s.name} — ${tokens} of ${Math.round(s.limit / 1000)}k (${s.pct}%)`;
+        const ageMin = Math.round((s.age_seconds || 0) / 60);
+        item.title = `${s.name} — ${tokens} of ${Math.round(s.limit / 1000)}k (${s.pct}%), last turn ${ageMin}m ago`;
 
         const text = document.createElement('div');
         text.className = 'ctx-text';
@@ -214,7 +216,7 @@ function renderContext(container, sessions, thresholds, brand) {
         name.textContent = s.name;
         const tok = document.createElement('span');
         tok.className = 'ctx-tokens';
-        tok.textContent = tokens;
+        tok.textContent = ageMin >= 2 ? `${tokens} · ${ageMin}m` : tokens;
         text.append(name, tok);
 
         item.append(contextRing(s.pct, thresholds, brand), text);
@@ -229,7 +231,7 @@ function updateData(data) {
     renderProvider('Claude', data.claude, thresholds, 'var(--orange)');
     renderProvider('Codex', data.codex, thresholds, 'var(--codex)');
 
-    setPinned(!!data.pinned);
+    setPinMode(!!data.pin_mode);
 }
 
 // Replay the spring entrance and bar sweep each time Python shows the window.
@@ -245,10 +247,13 @@ function hudShown() {
     }));
 }
 
-function setPinned(pinned) {
+function setPinMode(pinned) {
     document.body.classList.toggle('pinned', pinned);
+    els.pinBtn.classList.toggle('pinned', pinned);
+    els.pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+    els.pinBtn.title = pinned ? 'Unpin (hide on release)' : 'Pin (stay on screen)';
     els.pinState.textContent = pinned ? 'pinned' : '';
-    els.hint.textContent = pinned ? 'click or esc to close' : 'click to pin · esc to close';
+    els.hint.textContent = pinned ? 'esc to close' : 'release to hide · pin to keep';
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +267,7 @@ function init(config) {
         tagline: document.getElementById('tagline'),
         pinState: document.getElementById('pinState'),
         hint: document.getElementById('hint'),
+        pinBtn: document.getElementById('pinBtn'),
         claudeSprite: document.getElementById('claudeSprite'),
         codexSprite: document.getElementById('codexSprite'),
         providerClaude: document.getElementById('providerClaude'),
@@ -290,14 +296,13 @@ function init(config) {
         pywebview.api.open_popup();
     });
 
-    // Click toggles: pin the peek, or dismiss an already-pinned HUD.
-    document.body.addEventListener('click', () => {
-        if (document.body.classList.contains('pinned')) {
-            pywebview.api.close();
-        } else {
-            setPinned(true);
-            pywebview.api.pin();
-        }
+    // Pin is a sticky mode: on -> summons stay on screen; off -> the HUD
+    // lives only while the hotkey is held.
+    els.pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = !els.pinBtn.classList.contains('pinned');
+        setPinMode(next);
+        pywebview.api.set_pin_mode(next).then((applied) => setPinMode(!!applied)).catch(() => setPinMode(!next));
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') pywebview.api.close();
@@ -305,7 +310,6 @@ function init(config) {
 
     els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
     startBlink();
-    setPinned(false);
     updateData(config.data);
 
     // Content-driven window height: #card.scrollHeight is the needed height

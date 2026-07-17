@@ -24,8 +24,13 @@ from . import api
 
 __all__ = ['active_sessions']
 
-# A transcript untouched for this long is no longer "current".
-ACTIVE_WINDOW_SECONDS = 600
+# A transcript untouched for this long is no longer "current".  Sessions
+# only write on turns, so a quiet-but-open window keeps its context alive
+# far longer than the last write; the HUD shows staleness via age instead
+# of dropping the session early.
+ACTIVE_WINDOW_SECONDS = 3600
+# Beyond this quiet time the session is rendered as idle (dimmed).
+IDLE_AFTER_SECONDS = 600
 # Context limit is not recorded in the transcript; assume the standard
 # window unless the observed context already exceeds it (long-context model).
 DEFAULT_CONTEXT_LIMIT = 200_000
@@ -56,6 +61,8 @@ def active_sessions(max_sessions: int = 3, now: float | None = None) -> list[dic
     for mtime, path in sorted(candidates, reverse=True):
         info = _read_session_tail(path)
         if info is not None:
+            info['age_seconds'] = max(0, int(now - mtime))
+            info['idle'] = info['age_seconds'] >= IDLE_AFTER_SECONDS
             sessions.append(info)
         if len(sessions) >= max_sessions:
             break
