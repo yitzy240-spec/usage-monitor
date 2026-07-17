@@ -343,7 +343,7 @@ HUD_THRESHOLDS: list[float] = _S.get('hud_thresholds', [70, 90])
 HUD_SESSIONS: bool = _S.get('hud_sessions', True)
 # Seconds the unpinned HUD lingers after the hotkey is released before
 # fading out (0 = hide immediately). Hovering it pauses the countdown.
-HUD_LINGER: int = _S.get('hud_linger', 20)
+HUD_LINGER: int = _S.get('hud_linger', 5)
 
 # Codex (OpenAI) provider: enabled by default when a Codex CLI login exists.
 # (The default probes the standard ~/.codex location only; set the key
