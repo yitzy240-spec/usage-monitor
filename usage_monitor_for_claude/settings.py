@@ -31,7 +31,7 @@ __all__ = [
     'CODEX_ENABLED', 'CODEX_POLL_INTERVAL',
     'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
-    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_LINGER', 'HUD_SESSIONS', 'HUD_THRESHOLDS',
+    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_LINGER', 'HUD_POSITION', 'HUD_SESSIONS', 'HUD_THRESHOLDS',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
@@ -157,6 +157,17 @@ def _validate(data: dict, path: Path) -> dict:
             if not isinstance(value, str):
                 errors.append(f'  {key}: expected a color string, got {type(value).__name__}')
                 drop.append(key)
+
+        elif key == 'hud_position':
+            if value == 'auto':
+                pass
+            elif not isinstance(value, list) or len(value) != 2 or any(
+                isinstance(v, bool) or not isinstance(v, (int, float)) for v in value
+            ):
+                errors.append(f'  {key}: expected "auto" or an [x, y] pair')
+                drop.append(key)
+            else:
+                data[key] = [int(v) for v in value]
 
         elif key == 'hud_thresholds':
             if not isinstance(value, list) or len(value) != 2:
@@ -370,6 +381,9 @@ HUD_HOTKEY: str = _S.get('hud_hotkey', 'ctrl+alt+space')
 HUD_THRESHOLDS: list[float] = _S.get('hud_thresholds', [70, 90])
 # Show the context-window fill of currently active Claude Code sessions
 HUD_SESSIONS: bool = _S.get('hud_sessions', True)
+# Where the HUD appears: 'auto' (bottom-right above the tray) or a dragged
+# [x, y] top-left in physical pixels (written back automatically on drag).
+HUD_POSITION: str | list = _S.get('hud_position', 'auto')
 # Seconds the unpinned HUD lingers after the hotkey is released before
 # fading out (0 = hide immediately). Hovering it pauses the countdown.
 HUD_LINGER: int = _S.get('hud_linger', 5)

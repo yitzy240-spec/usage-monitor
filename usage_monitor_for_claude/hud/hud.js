@@ -348,6 +348,28 @@ function init(config) {
         if (lingerArmed) beginLinger(LINGER_AFTER_LEAVE_SECONDS);
     });
 
+    // Drag the HUD anywhere by its background; the spot is remembered.
+    let dragging = false;
+    document.body.addEventListener('mousedown', (e) => {
+        if (e.button !== 0 || e.target.closest('button')) return;
+        e.preventDefault();
+        pywebview.api.begin_drag().then((started) => { dragging = !!started; }).catch(() => {});
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        if (e.buttons === 0) {
+            dragging = false;
+            pywebview.api.end_drag();
+            return;
+        }
+        pywebview.api.drag().catch(() => {});
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        pywebview.api.end_drag();
+    });
+
     els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
     startBlink();
     updateData(config.data);

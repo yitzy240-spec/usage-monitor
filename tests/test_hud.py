@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from usage_monitor_for_claude.hud import _provider_payload, parse_hotkey, pick_mood
+from usage_monitor_for_claude.hud import _provider_payload, clamp_position, parse_hotkey, pick_mood
 
 
 class TestParseHotkey(unittest.TestCase):
@@ -51,6 +51,23 @@ class TestPickMood(unittest.TestCase):
         """Usage running ahead of the clock is a sweat even at low percent."""
         self.assertEqual(pick_mood(10, [70, 90], pace_ahead=True), 'sweat')
         self.assertEqual(pick_mood(95, [70, 90], pace_ahead=True), 'panic')
+
+
+class TestClampPosition(unittest.TestCase):
+    """Tests for clamp_position() keeping dragged spots on-screen."""
+
+    WORK = (0, 0, 2880, 1704)
+
+    def test_inside_unchanged(self):
+        self.assertEqual(clamp_position((100, 200), (760, 470), self.WORK), (100, 200))
+
+    def test_offscreen_clamped(self):
+        self.assertEqual(clamp_position((-500, -50), (760, 470), self.WORK), (0, 0))
+        self.assertEqual(clamp_position((99999, 99999), (760, 470), self.WORK), (2880 - 760, 1704 - 470))
+
+    def test_negative_work_origin(self):
+        # Secondary monitor left of primary: work area can start negative.
+        self.assertEqual(clamp_position((5, 5), (100, 100), (-1920, 0, 0, 1080)), (-100, 5))
 
 
 class TestProviderPayload(unittest.TestCase):

@@ -30,7 +30,9 @@ import webview  # type: ignore[import-untyped]  # no type stubs available
 
 from .claude_sessions import active_sessions
 from .i18n import T
-from .settings import HUD_HOTKEY, HUD_LINGER, HUD_SESSIONS, HUD_THRESHOLDS
+from .settings import (
+    HUD_HOTKEY, HUD_LINGER, HUD_POSITION, HUD_SESSIONS, HUD_THRESHOLDS, settings_write_path,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -47,6 +49,9 @@ _WM_HOTKEY = 0x0312
 _WM_QUIT = 0x0012
 _MOD_NOREPEAT = 0x4000
 _HOTKEY_ID = 0xB00
+_WM_POWERBROADCAST = 0x0218
+_PBT_APMRESUMESUSPEND = 0x0007
+_PBT_APMRESUMEAUTOMATIC = 0x0012
 
 _MODIFIERS = {'alt': 0x1, 'ctrl': 0x2, 'control': 0x2, 'shift': 0x4, 'win': 0x8}
 _NAMED_VKS = {
@@ -68,7 +73,7 @@ class _MONITORINFO(ctypes.Structure):
     ]
 
 
-__all__ = ['UsageHud', 'parse_hotkey', 'pick_mood']
+__all__ = ['UsageHud', 'clamp_position', 'parse_hotkey', 'pick_mood']
 
 if TYPE_CHECKING:
     from .app import UsageMonitorForClaude
@@ -119,6 +124,19 @@ def pick_mood(worst_pct: float, thresholds: list[float] | None = None, pace_ahea
     return 'happy'
 
 
+def clamp_position(pos: tuple[int, int], size: tuple[int, int], work: tuple[int, int, int, int]) -> tuple[int, int]:
+    """Keep a remembered window position fully inside the work area.
+
+    Guards against a dragged spot that no longer exists (monitor unplugged,
+    resolution change) resurrecting the HUD off-screen.
+    """
+    left, top, right, bottom = work
+    width, height = size
+    x = max(left, min(pos[0], right - width))
+    y = max(top, min(pos[1], bottom - height))
+    return x, y
+
+
 def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str, Any]:
     """Build one provider block (bars + error text) for the HUD JS."""
     from .popup import _usage_bar_list
@@ -163,6 +181,17 @@ class UsageHud:
         self._loaded = threading.Event()
         self._pump_tid = 0
         self._refresh_stop = threading.Event()
+        # Custom position (physical px, window top-left) from dragging; None
+        # means the default bottom-right-above-tray placement.
+        self._custom_pos: tuple[int, int] | None = None
+        if isinstance(HUD_POSITION, list) and len(HUD_POSITION) == 2:
+            self._custom_pos = (int(HUD_POSITION[0]), int(HUD_POSITION[1]))
+        self._dragging = False
+        self._drag_offset = (0, 0)
+        # Set when the system resumes from sleep: WebView2 composition often
+        # comes back wedged (double-image flicker), so the next summon gets
+        # a freshly created window instead.
+        self._stale = False
 
     # Lifecycle
 
@@ -256,7 +285,7 @@ class UsageHud:
         }
 
     def _position(self) -> None:
-        """Place the HUD bottom-right above the tray on the taskbar monitor."""
+        """Place the HUD: custom (dragged) spot, else bottom-right above the tray."""
         tray = ctypes.windll.user32.FindWindowW('Shell_TrayWnd', None)
         hmon = ctypes.windll.user32.MonitorFromWindow(tray, 2)  # MONITOR_DEFAULTTONEAREST
         info = _MONITORINFO()
@@ -270,8 +299,11 @@ class UsageHud:
         height = int(self._height * scale)
         margin = int(16 * scale)
 
-        x = work.right - width - margin
-        y = work.bottom - height - margin
+        if self._custom_pos is not None:
+            x, y = clamp_position(self._custom_pos, (width, height), (work.left, work.top, work.right, work.bottom))
+        else:
+            x = work.right - width - margin
+            y = work.bottom - height - margin
         # insertAfter 0 + SWP_NOZORDER: the window is already TopMost via
         # pywebview, and passing HWND_TOPMOST (-1) through ctypes' default
         # c_int conversion corrupts the 64-bit HWND parameter.
@@ -279,12 +311,27 @@ class UsageHud:
         _logger.info('hud: position dpi=%s -> (%s,%s %sx%s) ok=%s', dpi, x, y, width, height, ok)
 
     def show(self) -> None:
-        """Show the HUD without activating it and start live refresh."""
+        """Show the HUD without activating it and start live refresh.
+
+        A window marked stale (system resume) or failing a health ping is
+        torn down and rebuilt first - WebView2 composition does not reliably
+        survive sleep and renders a doubled, flickering image afterwards.
+        """
         with self._lock:
+            if self._stale and self._window is not None:
+                self._destroy_window()
             if self._window is None:
                 self._create_window()
             if self._window is None or not self._loaded.wait(timeout=5):
                 return
+            try:
+                if self._window.evaluate_js('1') != 1:
+                    raise RuntimeError('hud page unresponsive')
+            except Exception:
+                self._destroy_window()
+                self._create_window()
+                if self._window is None or not self._loaded.wait(timeout=5):
+                    return
             self._push_data()
             self._position()
             ctypes.windll.user32.ShowWindow(self._hwnd, _SW_SHOWNA)
@@ -322,6 +369,77 @@ class UsageHud:
     def set_pin_mode(self, enabled: bool) -> bool:
         self._pin_mode = bool(enabled)
         return self._pin_mode
+
+    def _destroy_window(self) -> None:
+        """Tear the window down; the next summon builds a fresh one."""
+        window, self._window = self._window, None
+        self._hwnd = 0
+        self._visible = False
+        self._loaded.clear()
+        self._refresh_stop.set()
+        self._stale = False
+        if window is not None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
+
+    def _mark_stale(self) -> None:
+        """Called on system resume: retire the current window."""
+        self._stale = True
+        if self._visible:
+            self.hide(fade=False)
+
+    # Dragging (bridge-called; same physical-pixel math as the popup)
+
+    def _begin_drag(self) -> bool:
+        if not self._hwnd:
+            return False
+        cursor = ctypes.wintypes.POINT()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(self._hwnd, ctypes.byref(rect))
+        self._drag_offset = (cursor.x - rect.left, cursor.y - rect.top)
+        self._dragging = True
+        return True
+
+    def _drag(self) -> bool:
+        if not self._dragging or not self._hwnd:
+            return False
+        cursor = ctypes.wintypes.POINT()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
+        x = cursor.x - self._drag_offset[0]
+        y = cursor.y - self._drag_offset[1]
+        ctypes.windll.user32.SetWindowPos(self._hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)  # NOSIZE|NOZORDER|NOACTIVATE
+        return True
+
+    def _end_drag(self) -> None:
+        if not self._dragging:
+            return
+        self._dragging = False
+        if not self._hwnd:
+            return
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(self._hwnd, ctypes.byref(rect))
+        self._custom_pos = (rect.left, rect.top)
+        self._persist_position()
+
+    def _persist_position(self) -> None:
+        """Remember the dragged spot across restarts (hud_position setting)."""
+        if self._custom_pos is None:
+            return
+        try:
+            path = settings_write_path()
+            try:
+                data = json.loads(path.read_text(encoding='utf-8-sig'))
+                if not isinstance(data, dict):
+                    data = {}
+            except (OSError, ValueError):
+                data = {}
+            data['hud_position'] = list(self._custom_pos)
+            path.write_text(json.dumps(data, indent=4) + '\n', encoding='utf-8')
+        except OSError:
+            pass
 
     def _set_height(self, height: int) -> None:
         """Grow/shrink the window to the content height reported by JS.
@@ -367,13 +485,70 @@ class UsageHud:
             _logger.warning('hud: RegisterHotKey failed for %r (in use by another app?)', HUD_HOTKEY)
             return
 
+        self._create_power_window()
+
         try:
             while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 if msg.message == _WM_HOTKEY and msg.wParam == _HOTKEY_ID:
                     self._on_hotkey(vk)
+                else:
+                    ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
+                    ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
         finally:
             ctypes.windll.user32.UnregisterHotKey(None, _HOTKEY_ID)
             self._pump_tid = 0
+
+    def _create_power_window(self) -> None:
+        """Hidden top-level window receiving WM_POWERBROADCAST on this thread.
+
+        Sleep/resume wedges WebView2's composition (doubled flicker); this is
+        the reliable signal to retire the window.  Message-only windows do
+        not receive power broadcasts, hence a real (hidden) one.
+        """
+        wintypes = ctypes.wintypes
+        WNDPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t, wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM,
+        )
+
+        # Private, fully-typed bindings: handles are 64-bit, and ctypes'
+        # default c_int conversion overflows on them.
+        user32 = ctypes.WinDLL('user32')
+        kernel32 = ctypes.WinDLL('kernel32')
+        kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        user32.DefWindowProcW.argtypes = [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
+        user32.DefWindowProcW.restype = ctypes.c_ssize_t
+        user32.CreateWindowExW.argtypes = [
+            wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID,
+        ]
+        user32.CreateWindowExW.restype = wintypes.HWND
+
+        def wndproc(hwnd: int, message: int, wparam: int, lparam: int) -> int:
+            if message == _WM_POWERBROADCAST and wparam in (_PBT_APMRESUMESUSPEND, _PBT_APMRESUMEAUTOMATIC):
+                threading.Thread(target=self._mark_stale, daemon=True).start()
+            return user32.DefWindowProcW(hwnd, message, wparam, lparam)
+
+        self._power_wndproc = WNDPROC(wndproc)  # keep referenced (GC)
+
+        class _WNDCLASSW(ctypes.Structure):
+            _fields_ = [
+                ('style', ctypes.c_uint), ('lpfnWndProc', WNDPROC),
+                ('cbClsExtra', ctypes.c_int), ('cbWndExtra', ctypes.c_int),
+                ('hInstance', wintypes.HINSTANCE), ('hIcon', wintypes.HANDLE),
+                ('hCursor', wintypes.HANDLE), ('hbrBackground', wintypes.HANDLE),
+                ('lpszMenuName', wintypes.LPCWSTR), ('lpszClassName', wintypes.LPCWSTR),
+            ]
+
+        wc = _WNDCLASSW()
+        wc.lpfnWndProc = self._power_wndproc
+        wc.lpszClassName = 'UsageMonitorHudPower'
+        wc.hInstance = kernel32.GetModuleHandleW(None)
+        if ctypes.windll.user32.RegisterClassW(ctypes.byref(wc)):
+            user32.CreateWindowExW(
+                0, wc.lpszClassName, None, 0, 0, 0, 0, 0, None, None, wc.hInstance, None,
+            )
 
     def _on_hotkey(self, vk: int) -> None:
         """Handle one hotkey press.
@@ -422,6 +597,15 @@ class _HudApi:
     def report_height(self, height: int) -> None:
         if height:
             self._hud._set_height(height)
+
+    def begin_drag(self) -> bool:
+        return self._hud._begin_drag()
+
+    def drag(self) -> bool:
+        return self._hud._drag()
+
+    def end_drag(self) -> None:
+        self._hud._end_drag()
 
     def close(self) -> None:
         self._hud.hide()
