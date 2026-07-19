@@ -16,6 +16,11 @@ function renderAccounts(accounts) {
         el.classList.toggle('missing', !ok);
         el.querySelector('.acc-status').textContent = ok ? 'signed in' : 'not signed in';
     }
+    const appLogin = !!accounts.claude_app_login;
+    $('accClaude').querySelector('.acc-status').textContent =
+        accounts.claude ? (appLogin ? 'signed in (app login)' : 'signed in') : 'not signed in';
+    $('signOutRow').classList.toggle('app-login', appLogin);
+    if (accounts.claude) $('oauthCodeRow').classList.remove('visible');
 }
 
 function collectSettings() {
@@ -157,6 +162,33 @@ async function init() {
         });
     }
     $('recheckBtn').addEventListener('click', recheck);
+
+    // App login (OAuth) for claude.ai users without the CLI.
+    $('claudeOauthBtn').addEventListener('click', async () => {
+        $('oauthError').textContent = '';
+        const started = await pywebview.api.claude_login_start().catch(() => false);
+        if (started) {
+            $('oauthCodeRow').classList.add('visible');
+            $('oauthCode').focus();
+        } else {
+            $('oauthError').textContent = 'Could not open the browser.';
+            $('oauthError').classList.add('visible');
+        }
+    });
+    $('oauthConfirm').addEventListener('click', async () => {
+        const result = await pywebview.api.claude_login_finish($('oauthCode').value)
+            .catch(() => ({ ok: false, error: 'bridge error' }));
+        const err = $('oauthError');
+        err.classList.toggle('visible', !result.ok);
+        err.textContent = result.ok ? '' : (result.error || 'sign-in failed');
+        if (result.ok) {
+            $('oauthCode').value = '';
+            recheck();
+        }
+    });
+    $('claudeSignOutBtn').addEventListener('click', async () => {
+        renderAccounts(await pywebview.api.claude_sign_out().catch(() => ({})));
+    });
     $('lingerInput').addEventListener('input', () => {
         $('lingerVal').textContent = `${$('lingerInput').value}s`;
     });

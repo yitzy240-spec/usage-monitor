@@ -29,6 +29,9 @@ from typing import TYPE_CHECKING, Any
 
 import webview  # type: ignore[import-untyped]  # no type stubs available
 
+import webbrowser
+
+from . import claude_oauth
 from .api import read_access_token
 from .autostart import is_autostart_enabled, set_autostart
 from .codex_api import read_codex_tokens
@@ -101,7 +104,31 @@ class _SetupApi:
         return {
             'claude': bool(read_access_token()),
             'codex': read_codex_tokens() is not None,
+            'claude_app_login': claude_oauth.has_app_login(),
         }
+
+    # Claude app login (OAuth) - for chat/Desktop users without the CLI
+
+    def claude_login_start(self) -> bool:
+        """Open the browser on Anthropic's login page; remember the verifier."""
+        url, verifier = claude_oauth.generate_login()
+        self._claude_verifier = verifier
+        try:
+            webbrowser.open(url)
+        except Exception:
+            return False
+        return True
+
+    def claude_login_finish(self, pasted: str) -> dict[str, Any]:
+        verifier = getattr(self, '_claude_verifier', None)
+        if not verifier:
+            return {'ok': False, 'error': 'start the sign-in first'}
+        error = claude_oauth.exchange_code(str(pasted), verifier)
+        return {'ok': error is None, 'error': error}
+
+    def claude_sign_out(self) -> dict[str, bool]:
+        claude_oauth.sign_out()
+        return self.recheck()
 
     def check_hotkey(self, spec: str) -> bool:
         return parse_hotkey(str(spec)) is not None

@@ -96,6 +96,15 @@ p { font-size: 12.5px; line-height: 1.55; }
 .acc-help { font-size: 11.5px; }
 .account.ok .acc-help, .account.ok .acc-actions { display: none; }
 
+/* App-login (OAuth) paste-code flow */
+.oauth-code { display: none; flex-direction: column; gap: 6px; }
+.oauth-code.visible { display: flex; }
+.oauth-code-line { display: flex; gap: 8px; }
+.oauth-code-line input { flex: 1; }
+#signOutRow { display: none; }
+/* Signed in via app login: hide the sign-in helpers, show sign-out. */
+.account.ok #signOutRow.app-login { display: flex; }
+
 /* Fields */
 
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }

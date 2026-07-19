@@ -10,8 +10,18 @@ structure is preserved: small modules, no obfuscation, ~1,000 unit tests.
 
 | File | Owner | Used for |
 |---|---|---|
-| `~/.claude/.credentials.json` | Claude Code CLI | Bearer token for the Anthropic usage/profile API |
+| `~/.claude/.credentials.json` | Claude Code CLI | Bearer token for the Anthropic usage/profile API (preferred when present) |
 | `~/.codex/auth.json` | Codex CLI | Bearer token + account id for the ChatGPT usage API |
+| `%APPDATA%/UsageMonitorForClaude/claude-oauth.dat` | this app | Optional "Sign in with Claude" app login for users without the CLI - OAuth tokens encrypted with Windows DPAPI (per-user), created only if you use that flow |
+
+**App login (OAuth):** the setup window's *Sign in with Claude* runs the same
+authorization-code + PKCE flow the Claude Code CLI uses, against Anthropic's
+public client id, in your own browser - the app never sees your password.
+The granted token's scope set is the client's fixed one
+(`org:create_api_key user:profile user:inference`); this app only ever calls
+the usage/profile **read** endpoints - it never creates API keys and never
+runs inference. *Sign out of app login* in the setup window deletes the
+stored tokens.
 
 **Credentials (write):** only `~/.codex/auth.json`, and only when a Codex
 token refresh succeeds. OpenAI refresh tokens are single-use (rotating);
@@ -31,6 +41,7 @@ stored, or transmitted.
 | Endpoint | Purpose |
 |---|---|
 | `api.anthropic.com/api/oauth/usage`, `/api/oauth/profile` | Claude usage + account info |
+| `claude.ai/oauth/authorize` (system browser), `console.anthropic.com/v1/oauth/token` | optional app login + its token refresh |
 | `chatgpt.com/backend-api/codex/usage` (fallback `/backend-api/wham/usage`) | Codex usage |
 | `auth.openai.com/oauth/token` | Codex token refresh (only after a 401) |
 | `github.com` (release page, opened in the system browser) | manual update check via the tray menu |

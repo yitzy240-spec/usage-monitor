@@ -29,9 +29,21 @@
                 <span class="acc-name">Claude</span>
                 <span class="acc-status"></span>
             </div>
-            <p class="dim acc-help">Sign in by running <span class="mono">claude</span> in a terminal (Claude Code). The tray app reuses that login.</p>
+            <p class="dim acc-help">Use Claude Code? Run <span class="mono">claude</span> in a terminal and the app reuses that login. No CLI? Sign in with your claude.ai account directly.</p>
             <div class="acc-actions">
+                <button class="primary" id="claudeOauthBtn">Sign in with Claude</button>
                 <button data-login="claude">Open terminal</button>
+            </div>
+            <div class="oauth-code" id="oauthCodeRow">
+                <p class="dim">Log in in the browser, approve, then paste the code shown:</p>
+                <div class="oauth-code-line">
+                    <input type="text" id="oauthCode" spellcheck="false" placeholder="paste code here">
+                    <button class="primary" id="oauthConfirm">Confirm</button>
+                </div>
+                <small class="error" id="oauthError"></small>
+            </div>
+            <div class="acc-actions" id="signOutRow">
+                <button id="claudeSignOutBtn">Sign out of app login</button>
             </div>
         </div>
         <div class="account" id="accCodex">

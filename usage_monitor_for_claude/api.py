@@ -30,7 +30,22 @@ _FALLBACK_USER_AGENT = 'claude-code/2.1.204'
 
 
 def read_access_token() -> str | None:
-    """Read the current access token from the Claude credentials file."""
+    """Read the current Claude access token.
+
+    A Claude Code CLI login always wins; without one, the app's own OAuth
+    login (``claude_oauth``, for claude.ai chat/Desktop users with no CLI)
+    provides the token.
+    """
+    token = _read_cli_token()
+    if token:
+        return token
+
+    from .claude_oauth import get_access_token
+    return get_access_token()
+
+
+def _read_cli_token() -> str | None:
+    """Token from the Claude Code credentials file, or None."""
     if not CLAUDE_CREDENTIALS.exists():
         return None
 
