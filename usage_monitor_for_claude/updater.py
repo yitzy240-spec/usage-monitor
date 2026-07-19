@@ -33,7 +33,7 @@ __all__ = ['FORK_VERSION', 'check_for_update', 'download_and_apply', 'cleanup_ol
 # The fork's own version track (upstream keeps __version__). The release
 # workflow refuses to build a tag that does not match this constant, so it
 # cannot silently drift.
-FORK_VERSION = '1.9.0'
+FORK_VERSION = '1.9.1'
 
 RELEASES_API = 'https://api.github.com/repos/yitzy240-spec/usage-monitor/releases/latest'
 _EXE_NAME = 'UsageMonitorForClaude.exe'
@@ -122,9 +122,11 @@ def download_and_apply(release: dict[str, Any]) -> str | None:
         return f'could not stage the download: {exc}'
 
     current = Path(sys.executable)
-    old = current.with_name(current.name + '.old')
+    old = _free_old_slot(current)
+    if old is None:
+        tmp_path.unlink(missing_ok=True)
+        return 'too many stale .old files next to the EXE - delete them and retry'
     try:
-        old.unlink(missing_ok=True)
         current.rename(old)          # a running EXE's file may be renamed
         shutil.move(str(tmp_path), str(current))
     except OSError as exc:
@@ -139,14 +141,39 @@ def download_and_apply(release: dict[str, Any]) -> str | None:
     return None
 
 
+def _free_old_slot(current: Path) -> Path | None:
+    """A parking name for the outgoing EXE that is guaranteed writable.
+
+    The plain ``.old`` may be locked: if an earlier update's process never
+    exited (observed 2026-07-19), it keeps running FROM the renamed .old
+    file, and deleting it fails with access-denied - which used to abort
+    the whole update. Fall through to ``.old2``/``.old3``... instead;
+    ``cleanup_old_exe`` sweeps every variant on later starts.
+    """
+    for suffix in ('.old', '.old2', '.old3', '.old4', '.old5'):
+        candidate = current.with_name(current.name + suffix)
+        try:
+            candidate.unlink(missing_ok=True)
+        except OSError:
+            continue  # locked by a lingering process - try the next slot
+        return candidate
+    return None
+
+
 def cleanup_old_exe() -> None:
-    """Best-effort removal of the previous version left by an update."""
+    """Best-effort removal of previous versions left by updates (.old*)."""
     if not getattr(sys, 'frozen', False):
         return
+    current = Path(sys.executable)
     try:
-        Path(sys.executable).with_name(Path(sys.executable).name + '.old').unlink(missing_ok=True)
+        leftovers = list(current.parent.glob(current.name + '.old*'))
     except OSError:
-        pass  # still locked by the exiting old process; next start gets it
+        return
+    for leftover in leftovers:
+        try:
+            leftover.unlink()
+        except OSError:
+            pass  # still locked by an exiting old process; next start gets it
 
 
 def watch_updates(is_running: Callable[[], bool], on_available: Callable[[dict[str, Any]], None]) -> None:

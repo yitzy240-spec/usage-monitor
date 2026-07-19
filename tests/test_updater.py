@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from usage_monitor_for_claude.updater import (
-    FORK_VERSION, _expected_hash, _is_newer, _parse_tag, check_for_update, download_and_apply,
+    FORK_VERSION, _expected_hash, _free_old_slot, _is_newer, _parse_tag, check_for_update,
+    download_and_apply,
 )
 
 
@@ -80,6 +81,67 @@ class TestDownloadAndApply(unittest.TestCase):
     def test_refuses_outside_frozen_builds(self):
         error = download_and_apply({'exe_url': 'https://x/exe', 'sums_url': 'https://x/sums'})
         self.assertIn('packaged EXE only', error)
+
+
+class TestFreeOldSlot(unittest.TestCase):
+    """A locked .old must never abort an update (2026-07-19 field failure)."""
+
+    def setUp(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.exe = Path(self._tmp.name) / 'App.exe'
+        self.exe.write_bytes(b'x')
+
+    def test_prefers_plain_old(self):
+        slot = _free_old_slot(self.exe)
+        self.assertEqual(slot.name, 'App.exe.old')
+
+    def test_deletes_stale_unlocked_old(self):
+        stale = self.exe.with_name('App.exe.old')
+        stale.write_bytes(b'stale')
+        slot = _free_old_slot(self.exe)
+        self.assertEqual(slot.name, 'App.exe.old')
+        self.assertFalse(stale.exists())
+
+    def test_falls_through_locked_slots(self):
+        real_unlink = type(self.exe).unlink
+
+        def unlink(path, missing_ok=False):
+            if path.name.endswith('.old') or path.name.endswith('.old2'):
+                raise PermissionError(5, 'Access is denied')
+            return real_unlink(path, missing_ok=missing_ok)
+
+        with patch('pathlib.Path.unlink', unlink):
+            slot = _free_old_slot(self.exe)
+        self.assertEqual(slot.name, 'App.exe.old3')
+
+    def test_gives_up_when_all_slots_locked(self):
+        def unlink(path, missing_ok=False):
+            raise PermissionError(5, 'Access is denied')
+
+        with patch('pathlib.Path.unlink', unlink):
+            self.assertIsNone(_free_old_slot(self.exe))
+
+
+class TestCleanupSweep(unittest.TestCase):
+    def test_sweeps_every_old_variant(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        import sys as real_sys
+        from usage_monitor_for_claude import updater
+        with TemporaryDirectory() as tmp:
+            exe = Path(tmp) / 'App.exe'
+            exe.write_bytes(b'x')
+            for suffix in ('.old', '.old2', '.old5'):
+                exe.with_name(exe.name + suffix).write_bytes(b'stale')
+            with patch.object(real_sys, 'frozen', True, create=True), \
+                 patch.object(real_sys, 'executable', str(exe)):
+                updater.cleanup_old_exe()
+            leftovers = list(Path(tmp).glob('App.exe.old*'))
+            self.assertEqual(leftovers, [])
+            self.assertTrue(exe.exists())
 
 
 if __name__ == '__main__':

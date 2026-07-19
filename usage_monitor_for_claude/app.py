@@ -258,6 +258,9 @@ class UsageMonitorForClaude:
             if error:
                 self.icon.notify(f'Update failed: {error}', 'Updates')
             else:
+                # The swap is done at this point - even if the restart goes
+                # wrong, quitting and reopening the app runs the new version.
+                self.icon.notify(f"Update {self._update_available['version']} installed - restarting...", 'Updates')
                 self.on_restart()
         finally:
             self._update_running = False
