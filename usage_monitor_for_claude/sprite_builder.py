@@ -18,6 +18,8 @@ the HUD's existing box-shadow grid renderer.
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import re
@@ -120,6 +122,25 @@ def _normalize(data: Any) -> Any:
 _NEXT_MODEL = '_next_model_'
 
 
+def _render_png(grid: dict[str, Any], scale: int = 8) -> bytes:
+    """Rasterize a grid so the model can SEE its own sprite (vision refine)."""
+    from PIL import Image, ImageDraw
+
+    rows, palette = grid['rows'], grid['palette']
+    img = Image.new('RGBA', (len(rows[0]) * scale, len(rows) * scale), (26, 21, 18, 255))
+    draw = ImageDraw.Draw(img)
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch in palette:
+                draw.rectangle(
+                    [x * scale, y * scale, (x + 1) * scale - 1, (y + 1) * scale - 1],
+                    fill=palette[ch],
+                )
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+
 def _draw(token: str, model: str, messages: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
     """One drawing request. Returns (grid, None), (None, error) or (None, _NEXT_MODEL)."""
     try:
@@ -195,17 +216,32 @@ def generate_sprite(prompt: str) -> dict[str, Any]:
             if draft is None:
                 continue
 
-        # Self-critique refine pass: real fidelity gains, best-effort.
-        refined, _refine_error = _draw(token, model, [
-            ask,
-            {'role': 'assistant', 'content': json.dumps({k: draft[k] for k in ('name', 'palette', 'rows')})},
-            {'role': 'user', 'content': (
-                'Critique this draft against the craft rules - silhouette clarity, exterior '
-                'outline, per-material shading, prop readability - then output the IMPROVED '
-                'sprite. JSON only, same format, same or larger canvas.'
-            )},
-        ])
-        return {'ok': True, 'grid': refined or draft}
+        # Vision refine: the model SEES its own sprite rendered and fixes
+        # what actually reads poorly - far stronger than text-only critique.
+        current = draft
+        for _round in range(2):
+            try:
+                png_b64 = base64.b64encode(_render_png(current)).decode('ascii')
+            except Exception:
+                break
+            refined, _refine_error = _draw(token, model, [
+                ask,
+                {'role': 'assistant', 'content': json.dumps({k: current[k] for k in ('name', 'palette', 'rows')})},
+                {'role': 'user', 'content': [
+                    {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': png_b64}},
+                    {'type': 'text', 'text': (
+                        'This is your sprite rendered. Look at it as an art director: does the '
+                        'subject read instantly? Are the silhouette, proportions, and details '
+                        '(faces, props) actually recognizable, or do parts collapse into noise? '
+                        'Fix everything that reads poorly and output the corrected sprite - '
+                        'JSON only, same format. If it already reads well, output it unchanged.'
+                    )},
+                ]},
+            ])
+            if refined is None or refined['rows'] == current['rows']:
+                break
+            current = refined
+        return {'ok': True, 'grid': current}
 
     return {'ok': False, 'error': 'the sketch came back unusable - try rephrasing'}
 

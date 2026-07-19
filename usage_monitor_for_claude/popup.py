@@ -80,6 +80,18 @@ def _usage_bar_list(usage: dict[str, Any]) -> list[dict[str, Any]]:
         warn = pct >= 100 or (time_pct is not None and pct > time_pct)
         marker_rel = max(0.0, min(1.0, time_pct / 100)) if time_pct is not None else None
 
+        # Pace projection: linear extrapolation of the current burn rate to
+        # the end of the window ("at this rate you'll land at ~X%").
+        proj_rel = None
+        title = f'{pct:.0f}% used'
+        if time_pct is not None:
+            title += f' · {time_pct:.0f}% of the window elapsed'
+            if time_pct >= 4 and pct > 0:
+                projected = min(pct / time_pct * 100, 100.0)
+                if projected > pct + 1:
+                    proj_rel = projected / 100
+                    title += f' · on pace for ~{projected:.0f}% by reset'
+
         bars.append({
             'key': field,
             'label': label,
@@ -89,6 +101,8 @@ def _usage_bar_list(usage: dict[str, Any]) -> list[dict[str, Any]]:
             'reset_text': time_until(resets_at) if resets_at else '',
             'dividers': divider_positions(resets_at, period) if period else [],
             'marker_rel': marker_rel,
+            'proj_rel': proj_rel,
+            'title': title,
         })
     return bars
 

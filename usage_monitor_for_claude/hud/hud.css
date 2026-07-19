@@ -379,6 +379,19 @@ header {
     transition: width 500ms cubic-bezier(0.25, 1, 0.4, 1), background 300ms;
 }
 
+/* Where the window is heading at the current burn rate (behind the fill). */
+.row-proj {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 4px;
+    background: repeating-linear-gradient(
+        -55deg,
+        color-mix(in srgb, var(--bar-color) 34%, transparent) 0 3px,
+        transparent 3px 6px
+    );
+    transition: width 500ms cubic-bezier(0.25, 1, 0.4, 1);
+}
+
 .row-marker {
     position: absolute;
     top: -1px; bottom: -1px;

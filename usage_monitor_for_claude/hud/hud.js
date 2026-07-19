@@ -92,12 +92,22 @@ function renderRows(container, bars, thresholds, brand) {
 
         const track = document.createElement('div');
         track.className = 'row-bar';
+        // Pace projection: striped ghost from now to the projected level at
+        // reset, so the bar answers "where is this heading?" at a glance.
+        if (bar.proj_rel !== null && bar.proj_rel !== undefined) {
+            const proj = document.createElement('div');
+            proj.className = 'row-proj';
+            proj.style.setProperty('--bar-color', barColor(bar, thresholds, brand));
+            proj.style.width = `${bar.proj_rel * 100}%`;
+            track.appendChild(proj);
+        }
         const fill = document.createElement('div');
         fill.className = 'row-fill';
         fill.style.setProperty('--bar-color', barColor(bar, thresholds, brand));
         fill.dataset.target = `${bar.fill_pct * 100}%`;
         fill.style.width = fill.dataset.target;
         track.appendChild(fill);
+        if (bar.title) row.title = bar.title;
         if (bar.marker_rel !== null && bar.marker_rel !== undefined) {
             const marker = document.createElement('div');
             marker.className = 'row-marker';
