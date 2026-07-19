@@ -128,7 +128,7 @@ def _request_usage(tokens: dict[str, Any]) -> dict[str, Any]:
                 break
 
         if resp is None:
-            return {'error': T['connection_error']}
+            return {'error': T['codex_connection_error']}
         if resp.status_code == 200:
             return _map_usage(resp.json())
         if resp.status_code == 401:
@@ -138,12 +138,14 @@ def _request_usage(tokens: dict[str, Any]) -> dict[str, Any]:
             extra: dict[str, Any] = {'retry_after': retry} if retry is not None else {}
             return {**extra, 'error': T['http_error'].format(code=429), 'rate_limited': True}
         if 500 <= resp.status_code < 600:
-            return {'error': T['server_error'].format(code=resp.status_code)}
+            # Codex-specific wording: the shared string blames the Anthropic
+            # API, which reads as OUR bug when chatgpt.com has an outage.
+            return {'error': T['codex_server_error'].format(code=resp.status_code)}
         return {'error': T['http_error'].format(code=resp.status_code)}
     except requests.ConnectionError:
-        return {'error': T['connection_error']}
+        return {'error': T['codex_connection_error']}
     except Exception:
-        return {'error': T['connection_error']}
+        return {'error': T['codex_connection_error']}
 
 
 def _is_json(resp: Any) -> bool:
