@@ -318,22 +318,32 @@ const hudLife = (() => {
     // Visitors
     // ---------------------------------------------------------------------
 
+    function gridShadow(rows, palette, px) {
+        return rows.map((row, y) =>
+            [...row].map((ch, x) => palette[ch]
+                ? `${x * px}px ${y * px}px 0 0 ${palette[ch]}` : null)
+                .filter(Boolean).join(','))
+            .filter(Boolean).join(',');
+    }
+
     function gridElement(critter) {
         const el = document.createElement('div');
-        // Density-aware: fine 24-row grids render at 1px/cell, chunky 8-row
-        // grids at 3px - similar on-screen size, very different fidelity.
-        const px = critter.px || Math.max(1, Math.round(26 / critter.rows.length));
+        // Density-aware: dense 40+-row grids render at 1px/cell (~40px tall,
+        // Codex-sprite territory), chunky 8-row grids at 3px.
+        const px = critter.px || Math.max(1, Math.round(30 / critter.rows.length));
         const inner = document.createElement('div');
         inner.style.width = `${px}px`;
         inner.style.height = `${px}px`;
-        inner.style.boxShadow = critter.rows.map((row, y) =>
-            [...row].map((ch, x) => critter.palette[ch]
-                ? `${x * px}px ${y * px}px 0 0 ${critter.palette[ch]}` : null)
-                .filter(Boolean).join(','))
-            .filter(Boolean).join(',');
+        inner.style.boxShadow = gridShadow(critter.rows, critter.palette, px);
         el.style.width = `${critter.rows[0].length * px}px`;
         el.style.height = `${critter.rows.length * px}px`;
         el.appendChild(inner);
+        // Frame-swap hook for animated (Sprite Builder) critters.
+        el._setFrame = (name) => {
+            const rows = (name && critter.frames && critter.frames[name]) || critter.rows;
+            inner.style.boxShadow = gridShadow(rows, critter.palette, px);
+        };
+        el._hasFrame = (name) => !!(critter.frames && critter.frames[name]);
         return el;
     }
 
@@ -458,6 +468,11 @@ const hudLife = (() => {
         function doGreet() {
             const box = els[`${greetKey}Sprite`].parentElement;
             pulse(el.firstChild || el, 'hop', 550);
+            // Animated custom sprites wave hello with their own frame.
+            if (content._hasFrame && content._hasFrame('wave')) {
+                content._setFrame('wave');
+                setTimeout(() => content._setFrame(null), 1100);
+            }
             if (greetKey === 'codex') {
                 if (!codexTimer || codexBaseline !== 'ko') playCodex('wave', { durationMs: 1200 });
             } else if (claudeBaseline === 'idle') {
@@ -595,6 +610,21 @@ const hudLife = (() => {
         }
 
         if (Math.random() < 0.35) bubble(els.claudeSprite.parentElement, 'visitor');
+        // Animated custom sprites blink on their own heartbeat.
+        let visitorBlink = null;
+        if (content._hasFrame && content._hasFrame('blink')) {
+            visitorBlink = setInterval(() => {
+                content._setFrame('blink');
+                setTimeout(() => content._setFrame(null), 160);
+            }, 2600 + Math.random() * 1400);
+            const clear = new MutationObserver(() => {
+                if (!document.body.contains(el)) {
+                    clearInterval(visitorBlink);
+                    clear.disconnect();
+                }
+            });
+            clear.observe(document.body, { childList: true, subtree: true });
+        }
         render();
         requestAnimationFrame(step);
     }

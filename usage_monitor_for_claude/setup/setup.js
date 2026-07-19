@@ -246,21 +246,36 @@ async function init() {
 
     // Sprite Builder
     let pendingGrid = null;
+    let previewTimer = null;
     function renderGridPreview(grid) {
-        const px = Math.max(3, Math.round(130 / grid.rows.length));
-        const inner = document.createElement('div');
-        inner.style.width = `${px}px`;
-        inner.style.height = `${px}px`;
-        inner.style.boxShadow = grid.rows.map((row, y) =>
+        const px = Math.max(2, Math.round(130 / grid.rows.length));
+        const shadow = (rows) => rows.map((row, y) =>
             [...row].map((ch, x) => grid.palette[ch]
                 ? `${x * px}px ${y * px}px 0 0 ${grid.palette[ch]}` : null)
                 .filter(Boolean).join(','))
             .filter(Boolean).join(',');
+        const inner = document.createElement('div');
+        inner.style.width = `${px}px`;
+        inner.style.height = `${px}px`;
+        inner.style.boxShadow = shadow(grid.rows);
         const frame = document.createElement('div');
         frame.style.width = `${grid.rows[0].length * px}px`;
         frame.style.height = `${grid.rows.length * px}px`;
         frame.appendChild(inner);
         $('spritePreview').replaceChildren(frame);
+
+        // Cycle animation frames in the preview so life is visible upfront.
+        if (previewTimer) clearInterval(previewTimer);
+        const frames = grid.frames || {};
+        const cycle = ['blink', 'wave'].filter((f) => frames[f]);
+        if (cycle.length) {
+            let i = 0;
+            previewTimer = setInterval(() => {
+                const name = cycle[i++ % cycle.length];
+                inner.style.boxShadow = shadow(frames[name]);
+                setTimeout(() => { inner.style.boxShadow = shadow(grid.rows); }, name === 'wave' ? 700 : 180);
+            }, 2000);
+        }
     }
     async function drawSprite() {
         const err = $('spriteError');

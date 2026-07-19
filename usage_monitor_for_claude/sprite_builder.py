@@ -61,6 +61,9 @@ Craft rules (this is what separates good pixel art from noise):
   prop like a hat or mallet should be 5-10 pixels wide, not 2.
 - No stray isolated pixels; no checkerboard dithering.
 - Side or 3/4 view facing right; feet/base touch the bottom row.
+- The sprite lives on a DARK background (#1A1512): main body colors must be
+  mid-to-bright so the silhouette pops - never near-black except the outline.
+- All body parts connect - no floating fragments.
 """
 
 _HEX = re.compile(r'^#[0-9a-fA-F]{6}$')
@@ -86,10 +89,10 @@ def validate_grid(data: Any) -> dict[str, Any] | None:
     if not 1 <= len(clean_palette) <= 12:
         return None
 
-    if not 4 <= len(rows) <= 32:
+    if not 4 <= len(rows) <= 56:
         return None
     width = len(rows[0]) if isinstance(rows[0], str) else 0
-    if not 6 <= width <= 32:
+    if not 6 <= width <= 56:
         return None
     for row in rows:
         if not isinstance(row, str) or len(row) != width:
@@ -100,17 +103,36 @@ def validate_grid(data: Any) -> dict[str, Any] | None:
         return None
 
     slug = re.sub(r'[^a-z0-9-]+', '-', name.lower()).strip('-')[:40] or 'sprite'
-    return {'name': slug, 'palette': clean_palette, 'rows': list(rows)}
+    clean = {'name': slug, 'palette': clean_palette, 'rows': list(rows)}
+
+    # Optional animation frames: same canvas, same palette, minimal diffs.
+    frames = data.get('frames')
+    if isinstance(frames, dict):
+        clean_frames = {}
+        for frame_name, frame_rows in frames.items():
+            if (
+                isinstance(frame_name, str) and frame_name in ('blink', 'wave')
+                and isinstance(frame_rows, list) and len(frame_rows) == len(rows)
+                and all(
+                    isinstance(r, str) and len(r) == width
+                    and all(ch == '.' or ch in clean_palette for ch in r)
+                    for r in frame_rows
+                )
+            ):
+                clean_frames[frame_name] = list(frame_rows)
+        if clean_frames:
+            clean['frames'] = clean_frames
+    return clean
 
 
 def _normalize(data: Any) -> Any:
     """Repair near-miss model output (ragged rows, oversize, stray chars)."""
     if not isinstance(data, dict) or not isinstance(data.get('rows'), list) or not isinstance(data.get('palette'), dict):
         return data
-    rows = [str(row)[:32] for row in data['rows'][:32] if str(row).strip('.')]
+    rows = [str(row)[:56] for row in data['rows'][:56] if str(row).strip('.')]
     if not rows:
         return data
-    width = min(max(len(row) for row in rows), 32)
+    width = min(max(len(row) for row in rows), 56)
     keys = set(k for k in data['palette'] if isinstance(k, str) and len(k) == 1)
     rows = [
         ''.join(ch if ch == '.' or ch in keys else '.' for ch in row.ljust(width, '.')[:width])
@@ -122,6 +144,35 @@ def _normalize(data: Any) -> Any:
 _NEXT_MODEL = '_next_model_'
 
 
+def _scale2x(rows: list[str]) -> list[str]:
+    """EPX/Scale2x: edge-preserving 2x upscale of a character grid.
+
+    Doubles pixel density while keeping diagonals smooth - the model then
+    REFINES a dense grid instead of having to compose one from scratch
+    (composing 40+ coherent rows is where text pixel art falls apart).
+    """
+    h, w = len(rows), len(rows[0])
+
+    def at(x: int, y: int) -> str:
+        return rows[y][x] if 0 <= x < w and 0 <= y < h else '.'
+
+    out = []
+    for y in range(h):
+        top, bottom = [], []
+        for x in range(w):
+            p = at(x, y)
+            a, b, c, d = at(x, y - 1), at(x + 1, y), at(x - 1, y), at(x, y + 1)
+            e1 = a if (c == a and c != d and a != b) else p
+            e2 = b if (a == b and a != c and b != d) else p
+            e3 = c if (d == c and d != a and c != b) else p
+            e4 = d if (b == d and b != a and d != c) else p
+            top += [e1, e2]
+            bottom += [e3, e4]
+        out.append(''.join(top))
+        out.append(''.join(bottom))
+    return out
+
+
 def _render_png(grid: dict[str, Any], scale: int = 8) -> bytes:
     """Rasterize a grid so the model can SEE its own sprite (vision refine)."""
     from PIL import Image, ImageDraw
@@ -129,6 +180,15 @@ def _render_png(grid: dict[str, Any], scale: int = 8) -> bytes:
     rows, palette = grid['rows'], grid['palette']
     img = Image.new('RGBA', (len(rows[0]) * scale, len(rows) * scale), (26, 21, 18, 255))
     draw = ImageDraw.Draw(img)
+    # Checkered background: makes silhouette gaps and dark-on-dark colors
+    # visible to the critiquing model (a plain dark bg hid both).
+    for y in range(0, len(rows), 4):
+        for x in range(0, len(rows[0]), 4):
+            if (x // 4 + y // 4) % 2:
+                draw.rectangle(
+                    [x * scale, y * scale, (x + 4) * scale - 1, (y + 4) * scale - 1],
+                    fill=(52, 46, 40, 255),
+                )
     for y, row in enumerate(rows):
         for x, ch in enumerate(row):
             if ch in palette:
@@ -216,9 +276,17 @@ def generate_sprite(prompt: str) -> dict[str, Any]:
             if draft is None:
                 continue
 
+        # Densify: EPX-upscale the coherent small draft to 2x pixel density
+        # (Codex-sprite territory), then let the vision rounds refine detail
+        # into the dense grid.
+        current = draft
+        if len(draft['rows']) <= 28 and len(draft['rows'][0]) <= 28:
+            dense = validate_grid({**draft, 'rows': _scale2x(draft['rows'])})
+            if dense is not None:
+                current = dense
+
         # Vision refine: the model SEES its own sprite rendered and fixes
         # what actually reads poorly - far stronger than text-only critique.
-        current = draft
         for _round in range(2):
             try:
                 png_b64 = base64.b64encode(_render_png(current)).decode('ascii')
@@ -230,17 +298,39 @@ def generate_sprite(prompt: str) -> dict[str, Any]:
                 {'role': 'user', 'content': [
                     {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': png_b64}},
                     {'type': 'text', 'text': (
-                        'This is your sprite rendered. Look at it as an art director: does the '
-                        'subject read instantly? Are the silhouette, proportions, and details '
-                        '(faces, props) actually recognizable, or do parts collapse into noise? '
-                        'Fix everything that reads poorly and output the corrected sprite - '
-                        'JSON only, same format. If it already reads well, output it unchanged.'
+                        'This is your sprite rendered (it was upscaled 2x, so you have a dense '
+                        'canvas to work with). Look at it as an art director: does the subject '
+                        'read instantly? Are silhouette, proportions and details (faces, props) '
+                        'recognizable, or do parts collapse into noise? Use the extra density: '
+                        'smooth jagged curves, refine shading transitions, sharpen the small '
+                        'details. Output the corrected sprite - JSON only, same format, same '
+                        'canvas size. If it already reads well, output it unchanged.'
                     )},
                 ]},
             ])
             if refined is None or refined['rows'] == current['rows']:
                 break
             current = refined
+
+        # Animation frames: minimal-pixel-diff variants of the final grid.
+        frames, _frames_error = _draw(token, model, [
+            ask,
+            {'role': 'assistant', 'content': json.dumps({k: current[k] for k in ('name', 'palette', 'rows')})},
+            {'role': 'user', 'content': (
+                'Now give this sprite life with two animation frames, each a MINIMAL edit '
+                'of the exact rows above (same canvas size, same palette, change as few '
+                'pixels as possible): "blink" - eyes closed/looking away; "wave" - one '
+                'arm/appendage/feature raised in greeting. Reply with ONLY: '
+                '{"name": "...", "palette": {...the same palette...}, "rows": [...the same rows...], '
+                '"frames": {"blink": [...], "wave": [...]}}'
+            )},
+        ])
+        if frames is not None and frames.get('frames'):
+            # Frames must fit the FINAL grid (dims + palette), however the
+            # model may have re-echoed the rows.
+            merged = validate_grid({**current, 'frames': frames['frames']})
+            if merged is not None and merged.get('frames'):
+                current = merged
         return {'ok': True, 'grid': current}
 
     return {'ok': False, 'error': 'the sketch came back unusable - try rephrasing'}
