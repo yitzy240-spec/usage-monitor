@@ -31,7 +31,8 @@ import webview  # type: ignore[import-untyped]  # no type stubs available
 from .claude_sessions import active_sessions
 from .i18n import T
 from .settings import (
-    HUD_HOTKEY, HUD_LINGER, HUD_POSITION, HUD_SESSIONS, HUD_THRESHOLDS, settings_write_path,
+    HUD_HOTKEY, HUD_LINGER, HUD_POSITION, HUD_SESSIONS, HUD_SIZE, HUD_THRESHOLDS,
+    settings_write_path,
 )
 
 _logger = logging.getLogger(__name__)
@@ -186,6 +187,13 @@ class UsageHud:
         self._custom_pos: tuple[int, int] | None = None
         if isinstance(HUD_POSITION, list) and len(HUD_POSITION) == 2:
             self._custom_pos = (int(HUD_POSITION[0]), int(HUD_POSITION[1]))
+        # Manual size (logical px) from a user edge-resize; None = auto
+        # (fixed width, content-driven height). Once set, the user's size is
+        # the authority and content scrolls instead of growing the window.
+        self._manual_size: tuple[int, int] | None = None
+        if isinstance(HUD_SIZE, list) and len(HUD_SIZE) == 2:
+            self._manual_size = (max(300, int(HUD_SIZE[0])), max(160, int(HUD_SIZE[1])))
+        self._applying_size = False
         self._dragging = False
         self._drag_offset = (0, 0)
         # Set when the system resumes from sleep: WebView2 composition often
@@ -233,16 +241,24 @@ class UsageHud:
         if self._window is not None:
             return
 
+        width, height = self._intended_size()
         self._window = webview.create_window(
             '', url=str(_HUD_DIR / 'hud.html'),
-            width=self.WIDTH, height=self.HEIGHT,
-            resizable=False, frameless=True, shadow=False,
+            width=width, height=height,
+            resizable=True, frameless=True, shadow=False,
             easy_drag=False, on_top=True, hidden=True,
             background_color='#1A1915',
             js_api=_HudApi(self),
         )
         self._window.events.loaded += self._on_loaded
+        self._window.events.resized += self._on_resized
         self._window.events.closed += self._on_window_closed
+
+    def _intended_size(self) -> tuple[int, int]:
+        """Current target size in logical px (manual override or auto)."""
+        if self._manual_size is not None:
+            return self._manual_size
+        return self.WIDTH, self._height
 
     def _on_window_closed(self) -> None:
         """Forget a destroyed window so the next summon recreates it.
@@ -271,6 +287,13 @@ class UsageHud:
             # Windows 11 rounded corners; ignored (E_INVALIDARG) on older builds.
             corner = ctypes.c_int(2)  # DWMWCP_ROUND
             ctypes.windll.dwmapi.DwmSetWindowAttribute(self._hwnd, 33, ctypes.byref(corner), 4)
+
+            # WS_THICKFRAME on the frameless window: native edge-resize grips
+            # (DWM keeps the frame invisible on Win11, corners stay rounded).
+            _GWL_STYLE = -16
+            _WS_THICKFRAME = 0x00040000
+            style = ctypes.windll.user32.GetWindowLongW(self._hwnd, _GWL_STYLE)
+            ctypes.windll.user32.SetWindowLongW(self._hwnd, _GWL_STYLE, style | _WS_THICKFRAME)
 
             self._window.evaluate_js(f'init({json.dumps(self._init_config())})')
             self._loaded.set()
@@ -306,11 +329,50 @@ class UsageHud:
             dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or ctypes.windll.user32.GetDpiForSystem() or _BASELINE_DPI
         return info.rcWork, dpi
 
-    def _position(self) -> None:
-        """Place the HUD: custom (dragged) spot, else bottom-right above the tray.
+    def _apply_size(self) -> None:
+        """The ONE place that sets window size, in logical px via pywebview.
 
-        Work area and DPI come from the monitor the HUD is going to sit on,
-        not the taskbar's.
+        pywebview/WinForms scale logical sizes by the window's current
+        monitor DPI and reapply them on WM_DPICHANGED - setting physical
+        sizes ourselves raced that machinery and produced flicker storms
+        when crossing mixed-DPI monitors.
+        """
+        width, height = self._intended_size()
+        self._applying_size = True
+        try:
+            self._window.resize(width, height)
+        except Exception:
+            pass
+        finally:
+            self._applying_size = False
+
+    def _on_resized(self, width: int, height: int) -> None:
+        """Adopt a manual edge-resize as the new persistent size.
+
+        Only events that can actually BE a user resize count: window
+        visible, no drag or programmatic resize in flight, and a plausible
+        size.  WinForms fires resized with degenerate (near-zero) values on
+        hide/show transitions - adopting one of those once wedged the HUD
+        at the minimum size permanently.
+        """
+        if self._applying_size or self._dragging:
+            return
+        if width < 220 or height < 140:  # hide/minimize transition artifacts
+            return
+        if not (self._hwnd and ctypes.windll.user32.IsWindowVisible(self._hwnd)):
+            return
+        exp_w, exp_h = self._intended_size()
+        if abs(width - exp_w) <= 4 and abs(height - exp_h) <= 4:
+            return
+        self._manual_size = (max(300, int(width)), max(160, int(height)))
+        self._persist_setting('hud_size', list(self._manual_size))
+
+    def _position(self) -> None:
+        """Move (never size) the HUD: dragged spot, else bottom-right above the tray.
+
+        The physical target comes from the destination monitor's work area
+        and DPI; the conversion to pywebview's logical coordinates uses the
+        window's own current DPI, which is the factor WinForms scales by.
         """
         if self._custom_pos is not None:
             point = ctypes.wintypes.POINT(self._custom_pos[0] + 10, self._custom_pos[1] + 10)
@@ -321,8 +383,9 @@ class UsageHud:
         work, dpi = self._monitor_metrics(hmon)
 
         scale = dpi / _BASELINE_DPI
-        width = int(self.WIDTH * scale)
-        height = int(self._height * scale)
+        logical_w, logical_h = self._intended_size()
+        width = int(logical_w * scale)
+        height = int(logical_h * scale)
         margin = int(16 * scale)
 
         if self._custom_pos is not None:
@@ -330,11 +393,14 @@ class UsageHud:
         else:
             x = work.right - width - margin
             y = work.bottom - height - margin
-        # insertAfter 0 + SWP_NOZORDER: the window is already TopMost via
-        # pywebview, and passing HWND_TOPMOST (-1) through ctypes' default
-        # c_int conversion corrupts the 64-bit HWND parameter.
-        ok = ctypes.windll.user32.SetWindowPos(self._hwnd, 0, x, y, width, height, 0x0010 | 0x0004)  # SWP_NOACTIVATE | SWP_NOZORDER
-        _logger.info('hud: position dpi=%s -> (%s,%s %sx%s) ok=%s', dpi, x, y, width, height, ok)
+
+        window_dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or dpi
+        window_scale = window_dpi / _BASELINE_DPI
+        try:
+            self._window.move(int(x / window_scale), int(y / window_scale))
+        except Exception:
+            pass
+        _logger.debug('hud: position dpi=%s window_dpi=%s -> (%s,%s)', dpi, window_dpi, x, y)
 
     def show(self) -> None:
         """Show the HUD without activating it and start live refresh.
@@ -359,6 +425,7 @@ class UsageHud:
                 if self._window is None or not self._loaded.wait(timeout=5):
                     return
             self._push_data()
+            self._apply_size()
             self._position()
             ctypes.windll.user32.ShowWindow(self._hwnd, _SW_SHOWNA)
             # Height reports can land between the pre-show positioning and
@@ -448,16 +515,14 @@ class UsageHud:
         rect = ctypes.wintypes.RECT()
         ctypes.windll.user32.GetWindowRect(self._hwnd, ctypes.byref(rect))
         self._custom_pos = (rect.left, rect.top)
-        # Re-assert size/position against the drop monitor: a cross-monitor
-        # drag changes the effective DPI, and the mid-drag auto-rescale can
-        # leave the window at the wrong physical size.
-        self._position()
-        self._persist_position()
+        # After a cross-DPI drag WinForms has rescaled the window itself;
+        # re-asserting the LOGICAL size settles any drift without fighting
+        # it (popup.py's proven end-drag remedy).
+        self._apply_size()
+        self._persist_setting('hud_position', list(self._custom_pos))
 
-    def _persist_position(self) -> None:
-        """Remember the dragged spot across restarts (hud_position setting)."""
-        if self._custom_pos is None:
-            return
+    def _persist_setting(self, key: str, value: Any) -> None:
+        """Merge one runtime-remembered value into the settings file."""
         try:
             path = settings_write_path()
             try:
@@ -466,7 +531,7 @@ class UsageHud:
                     data = {}
             except (OSError, ValueError):
                 data = {}
-            data['hud_position'] = list(self._custom_pos)
+            data[key] = value
             path.write_text(json.dumps(data, indent=4) + '\n', encoding='utf-8')
         except OSError:
             pass
@@ -474,14 +539,19 @@ class UsageHud:
     def _set_height(self, height: int) -> None:
         """Grow/shrink the window to the content height reported by JS.
 
+        Only in auto-size mode - once the user has resized manually, their
+        size is the authority and overflowing content scrolls instead.
         Gates on actual Win32 visibility, not ``_visible``: reports arrive
         on bridge threads and can land mid-``show()`` before the flag flips.
         """
+        if self._manual_size is not None:
+            return
         height = max(int(height), 160)
         if height == self._height:
             return
         self._height = height
         if self._hwnd and ctypes.windll.user32.IsWindowVisible(self._hwnd):
+            self._apply_size()
             self._position()
 
     def _push_data(self) -> None:
@@ -592,11 +662,13 @@ class UsageHud:
         if self._visible and not (self._hwnd and ctypes.windll.user32.IsWindowVisible(self._hwnd)):
             self._visible = False
 
+        _logger.info('hud: hotkey (visible=%s)', self._visible)
         if self._visible:
             self.hide()
             return
 
         self.show()
+        _logger.info('hud: shown=%s hwnd=%s', self._visible, self._hwnd)
         while ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000:
             time.sleep(0.03)
             if not self._visible:  # closed from the HUD while still holding

@@ -35,6 +35,11 @@ body {
     padding: 14px 18px 10px;
     display: flex;
     flex-direction: column;
+    /* Manual-resize mode: the user's window size wins, content scrolls. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(240, 238, 229, 0.18) transparent;
     background:
         radial-gradient(130% 90% at 12% 0%, rgba(217, 119, 87, 0.13), transparent 55%),
         linear-gradient(160deg, var(--bg-hi), var(--bg-lo));

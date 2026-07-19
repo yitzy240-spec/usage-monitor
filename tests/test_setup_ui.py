@@ -64,6 +64,24 @@ class TestCleanValues(unittest.TestCase):
         self.assertEqual(cleaned['poll_interval'], 30)
 
 
+class TestPersistSetting(unittest.TestCase):
+    """Tests for UsageHud._persist_setting merging into the settings file."""
+
+    def test_merges_without_clobbering(self):
+        from usage_monitor_for_claude.hud import UsageHud
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'usage-monitor-settings.json'
+            path.write_text('{"hud_hotkey": "ctrl+alt+space"}', encoding='utf-8')
+            hud = object.__new__(UsageHud)
+            with patch('usage_monitor_for_claude.hud.settings_write_path', return_value=path):
+                hud._persist_setting('hud_size', [420, 300])
+                hud._persist_setting('hud_position', [10, 20])
+            data = json.loads(path.read_text(encoding='utf-8'))
+        self.assertEqual(data['hud_hotkey'], 'ctrl+alt+space')
+        self.assertEqual(data['hud_size'], [420, 300])
+        self.assertEqual(data['hud_position'], [10, 20])
+
+
 class TestSettingsWritePath(unittest.TestCase):
     """settings_write_path falls back to the app dir when no file exists."""
 
