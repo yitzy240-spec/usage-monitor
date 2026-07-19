@@ -245,13 +245,12 @@ class UsageHud:
         self._window = webview.create_window(
             '', url=str(_HUD_DIR / 'hud.html'),
             width=width, height=height,
-            resizable=True, frameless=True, shadow=False,
+            resizable=False, frameless=True, shadow=False,
             easy_drag=False, on_top=True, hidden=True,
             background_color='#1A1915',
             js_api=_HudApi(self),
         )
         self._window.events.loaded += self._on_loaded
-        self._window.events.resized += self._on_resized
         self._window.events.closed += self._on_window_closed
 
     def _intended_size(self) -> tuple[int, int]:
@@ -287,13 +286,6 @@ class UsageHud:
             # Windows 11 rounded corners; ignored (E_INVALIDARG) on older builds.
             corner = ctypes.c_int(2)  # DWMWCP_ROUND
             ctypes.windll.dwmapi.DwmSetWindowAttribute(self._hwnd, 33, ctypes.byref(corner), 4)
-
-            # WS_THICKFRAME on the frameless window: native edge-resize grips
-            # (DWM keeps the frame invisible on Win11, corners stay rounded).
-            _GWL_STYLE = -16
-            _WS_THICKFRAME = 0x00040000
-            style = ctypes.windll.user32.GetWindowLongW(self._hwnd, _GWL_STYLE)
-            ctypes.windll.user32.SetWindowLongW(self._hwnd, _GWL_STYLE, style | _WS_THICKFRAME)
 
             self._window.evaluate_js(f'init({json.dumps(self._init_config())})')
             self._loaded.set()
@@ -346,26 +338,42 @@ class UsageHud:
         finally:
             self._applying_size = False
 
-    def _on_resized(self, width: int, height: int) -> None:
-        """Adopt a manual edge-resize as the new persistent size.
+    # Grip-driven resize (bridge-called): the card's own corner grip drives
+    # the same single logical-size authority - no OS frame, no non-client
+    # hacks, no guessing which resized events were the user.
 
-        Only events that can actually BE a user resize count: window
-        visible, no drag or programmatic resize in flight, and a plausible
-        size.  WinForms fires resized with degenerate (near-zero) values on
-        hide/show transitions - adopting one of those once wedged the HUD
-        at the minimum size permanently.
-        """
-        if self._applying_size or self._dragging:
+    def _begin_resize(self) -> bool:
+        if not self._hwnd:
+            return False
+        cursor = ctypes.wintypes.POINT()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
+        self._resize_anchor = (cursor.x, cursor.y)
+        self._resize_anchor_size = self._intended_size()
+        dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or ctypes.windll.user32.GetDpiForSystem()
+        self._resize_scale = dpi / _BASELINE_DPI
+        self._resizing = True
+        return True
+
+    def _resize_drag(self) -> bool:
+        if not getattr(self, '_resizing', False) or not self._hwnd:
+            return False
+        cursor = ctypes.wintypes.POINT()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
+        dx = int((cursor.x - self._resize_anchor[0]) / self._resize_scale)
+        dy = int((cursor.y - self._resize_anchor[1]) / self._resize_scale)
+        width = max(300, min(900, self._resize_anchor_size[0] + dx))
+        height = max(160, min(1200, self._resize_anchor_size[1] + dy))
+        if (width, height) != self._intended_size():
+            self._manual_size = (width, height)
+            self._apply_size()
+        return True
+
+    def _end_resize(self) -> None:
+        if not getattr(self, '_resizing', False):
             return
-        if width < 220 or height < 140:  # hide/minimize transition artifacts
-            return
-        if not (self._hwnd and ctypes.windll.user32.IsWindowVisible(self._hwnd)):
-            return
-        exp_w, exp_h = self._intended_size()
-        if abs(width - exp_w) <= 4 and abs(height - exp_h) <= 4:
-            return
-        self._manual_size = (max(300, int(width)), max(160, int(height)))
-        self._persist_setting('hud_size', list(self._manual_size))
+        self._resizing = False
+        if self._manual_size is not None:
+            self._persist_setting('hud_size', list(self._manual_size))
 
     def _position(self) -> None:
         """Move (never size) the HUD: dragged spot, else bottom-right above the tray.
@@ -708,6 +716,15 @@ class _HudApi:
 
     def end_drag(self) -> None:
         self._hud._end_drag()
+
+    def begin_resize(self) -> bool:
+        return self._hud._begin_resize()
+
+    def resize_drag(self) -> bool:
+        return self._hud._resize_drag()
+
+    def end_resize(self) -> None:
+        self._hud._end_resize()
 
     def close(self) -> None:
         self._hud.hide()

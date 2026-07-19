@@ -349,25 +349,35 @@ function init(config) {
     });
 
     // Drag the HUD anywhere by its background; the spot is remembered.
+    // The corner grip resizes instead (same mechanics, size authority).
     let dragging = false;
+    let resizing = false;
+
+    document.getElementById('resizeGrip').addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pywebview.api.begin_resize().then((started) => { resizing = !!started; }).catch(() => {});
+    });
     document.body.addEventListener('mousedown', (e) => {
-        if (e.button !== 0 || e.target.closest('button')) return;
+        if (e.button !== 0 || e.target.closest('button') || e.target.id === 'resizeGrip') return;
         e.preventDefault();
         pywebview.api.begin_drag().then((started) => { dragging = !!started; }).catch(() => {});
     });
     document.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
+        if (!dragging && !resizing) return;
         if (e.buttons === 0) {
-            dragging = false;
-            pywebview.api.end_drag();
+            if (dragging) pywebview.api.end_drag();
+            if (resizing) pywebview.api.end_resize();
+            dragging = resizing = false;
             return;
         }
-        pywebview.api.drag().catch(() => {});
+        (resizing ? pywebview.api.resize_drag() : pywebview.api.drag()).catch(() => {});
     });
     document.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
-        pywebview.api.end_drag();
+        if (dragging) pywebview.api.end_drag();
+        if (resizing) pywebview.api.end_resize();
+        dragging = resizing = false;
     });
 
     els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
