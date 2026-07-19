@@ -139,6 +139,24 @@ def clamp_position(pos: tuple[int, int], size: tuple[int, int], work: tuple[int,
 
 
 _visitor_cache: list[str] | None = None
+_visitor_pack_cache: list[str] | None = None
+
+
+def _visitor_pack() -> list[str]:
+    """Bundled CC0 visitor sprites (Dungeon Crawl Stone Soup tiles).
+
+    Relative paths under the hud/ page so the strict CSP ('self') covers
+    them. The pack ships in-repo; see CREDITS in SECURITY.md.
+    """
+    global _visitor_pack_cache
+    if _visitor_pack_cache is None:
+        try:
+            _visitor_pack_cache = sorted(
+                f'visitors/{path.name}' for path in (_HUD_DIR / 'visitors').glob('*.png')
+            )
+        except OSError:
+            _visitor_pack_cache = []
+    return _visitor_pack_cache
 
 
 def _visitor_data_uris() -> list[str]:
@@ -267,6 +285,7 @@ class UsageHud:
             'thresholds': HUD_THRESHOLDS,
             'pin_mode': self._pin_mode,
             'visitors': _visitor_data_uris(),
+            'visitors_pack': _visitor_pack(),
         }
 
     # Window

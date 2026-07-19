@@ -75,6 +75,16 @@ certutil -hashfile UsageMonitorForClaude.exe SHA256
 Dependencies are pinned (`requirements.txt` + full `requirements-lock.txt`
 used by CI) and watched by Dependabot.
 
+## Art credits
+
+The visitor critters in `hud/visitors/` are from the [Dungeon Crawl Stone
+Soup tiles](https://github.com/crawl/tiles) (originally RLTiles), released
+by their artists under **CC0** (no attribution required - given gladly
+anyway). The Codex companion spritesheet is OpenAI's own published pet
+asset; Clawd is the MIT-licensed ClawdMoji recreation of the Claude Code
+logo. No other third-party characters are bundled; anything users drop
+into their local `visitors/` folder is their own responsibility.
+
 ## Reporting
 
 Open a GitHub issue, or use GitHub's private vulnerability reporting on this

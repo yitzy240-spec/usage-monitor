@@ -319,11 +319,21 @@ const hudLife = (() => {
     // ---------------------------------------------------------------------
 
     function visitorElement() {
+        // Pool: user PNGs (data URIs) > bundled CC0 pack (DCSS tiles) >
+        // the hand-drawn grid critters as a fallback garnish.
         const custom = (lastData && lastData.visitors) || [];
-        if (custom.length && Math.random() < 0.5) {
+        const pack = (lastData && lastData.visitors_pack) || [];
+        const roll = Math.random();
+        if (custom.length && roll < 0.4) {
             const img = document.createElement('img');
             img.src = custom[Math.floor(Math.random() * custom.length)];
             img.style.height = '22px';
+            return img;
+        }
+        if (pack.length && roll < 0.85) {
+            const img = document.createElement('img');
+            img.src = pack[Math.floor(Math.random() * pack.length)];
+            img.style.height = '24px';
             return img;
         }
         const critter = VISITORS[Math.floor(Math.random() * VISITORS.length)];
