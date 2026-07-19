@@ -69,32 +69,6 @@ const hudLife = (() => {
         tickle: ['hehe', '!'],
     };
 
-    // -- Built-in visitor critters (original pixel art, Clawd's grid style) --
-    const VISITORS = [
-        { name: 'snail', px: 3, palette: { '#': '#A9BE7B', 'O': '#16130E', 's': '#8A795D' }, map: [
-            '..####..',
-            '.#OO##..',
-            '.####s..',
-            'ss#ssss.',
-            'ssssssss',
-        ] },
-        { name: 'ghost', px: 3, palette: { '#': '#C8C4B4', 'O': '#16130E' }, map: [
-            '.######.',
-            '#O####O#',
-            '########',
-            '########',
-            '#.#..#.#',
-        ] },
-        { name: 'dino', px: 3, palette: { '#': '#7FA8C9', 'O': '#16130E' }, map: [
-            '....####',
-            '....#O##',
-            '#...####',
-            '#######.',
-            '.#####..',
-            '..#..#..',
-        ] },
-    ];
-
     // -- State --
     let started = false;
     let claudeBaseline = 'idle';   // idle | sleep
@@ -372,7 +346,7 @@ const hudLife = (() => {
         el.style.width = `${PET_W}px`;
         el.style.height = `${PET_H}px`;
         el.style.backgroundImage = `url(${pet.sheet})`;
-        el.style.backgroundSize = `${PET_W * 8}px ${PET_H * 9}px`;
+        el.style.backgroundSize = `${PET_W * 8}px ${PET_H * (pet.sheetRows || 9)}px`;
         el.style.backgroundRepeat = 'no-repeat';
         el.style.imageRendering = 'auto'; // hi-res art downscaled, not pixel art
         const frames = pet.rowFrames || [6, 8, 8, 4, 5, 8, 8, 8, 6];
@@ -409,28 +383,19 @@ const hudLife = (() => {
     const FLOATY = /bat|butterfly|jelly|eyeball|orb|ghost/;
 
     function pickVisitor() {
-        // Installed pets are the stars of the show when any exist.
-        if (PETS.length && Math.random() < 0.55) {
-            const pet = PETS[Math.floor(Math.random() * PETS.length)];
-            return { kind: 'pet', pet, floats: false };
-        }
+        // Petdex/Codex pets ARE the visitor cast; user-dropped PNGs and
+        // Sprite Builder critters still get walk-on parts. Nothing
+        // installed -> nobody visits (adopt pets in Settings).
         const custom = (lastData && lastData.visitors) || [];
         const grids = (lastData && lastData.visitor_grids) || [];
-        const pack = (lastData && lastData.visitors_pack) || [];
-        const roll = Math.random();
-        if ((custom.length || grids.length) && roll < 0.45) {
-            const pool = [
-                ...custom.map((src) => ({ kind: 'img', src, floats: false })),
-                ...grids.map((g) => ({ kind: 'grid', grid: g, floats: FLOATY.test(g.name || '') })),
-            ];
-            return pool[Math.floor(Math.random() * pool.length)];
+        const pool = [];
+        for (const pet of PETS) {
+            pool.push({ kind: 'pet', pet, floats: false }, { kind: 'pet', pet, floats: false });
         }
-        if (pack.length && roll < 0.9) {
-            const src = pack[Math.floor(Math.random() * pack.length)];
-            return { kind: 'img', src, floats: FLOATY.test(src) };
-        }
-        const critter = VISITORS[Math.floor(Math.random() * VISITORS.length)];
-        return { kind: 'grid', grid: { px: critter.px, palette: critter.palette, rows: critter.map }, floats: critter.name === 'ghost' };
+        for (const src of custom) pool.push({ kind: 'img', src, floats: false });
+        for (const g of grids) pool.push({ kind: 'grid', grid: g, floats: FLOATY.test(g.name || '') });
+        if (!pool.length) return null;
+        return pool[Math.floor(Math.random() * pool.length)];
     }
 
     // -- Platform physics: real element rects become walkable surfaces --
@@ -475,10 +440,11 @@ const hudLife = (() => {
         const layerBack = document.getElementById('visitorLayerBack');
         const cardEl = document.getElementById('card');
         if (!layerFront || !layerBack || layerFront.clientWidth < 100) return;
+        const pick = pickVisitor();
+        if (!pick) return;
         visitorBusy = true;
         const layer = layerFront; // shared coordinate space (both span the window)
 
-        const pick = pickVisitor();
         const content = pick.kind === 'img'
             ? Object.assign(document.createElement('img'), { src: pick.src })
             : pick.kind === 'pet' ? petElement(pick.pet)

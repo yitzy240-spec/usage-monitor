@@ -233,7 +233,7 @@ async function init() {
         $('doneHotkey').textContent = collectSettings().hud_hotkey;
         $('restartNote').style.display = dirty ? '' : 'none';
         $('restartBtn').style.display = dirty ? '' : 'none';
-        showStep('stepDone');
+        showStep('stepPacks');
     });
     $('saveBtn').addEventListener('click', async () => {
         if (!(await save())) return;
@@ -316,26 +316,31 @@ async function init() {
 
     // ---- Petdex pets ----
 
-    // Hand-picked original pets from the gallery for one-click adopting.
-    const FEATURED_PETS = ['blue-boba-axolotl', 'broom-witch', 'bun', 'brik', 'cantor-sprig'];
-    const PET_FRAME_W = 34, PET_FRAME_H = 37; // preview cell (192:208 ratio)
+    // Animated face: pet-list chips animate the sheet's idle ROW (9-row
+    // sheet), gallery cards animate the single-row preview STRIP.
+    const PET_FRAME_W = 34, PET_FRAME_H = 37; // display cell (192:208 ratio)
 
-    function petChip(pet) {
-        const chip = document.createElement('div');
-        chip.className = 'pet-chip';
+    function animatedFace(sheet, idleFrames, sheetRows) {
         const face = document.createElement('div');
         face.className = 'pet-face';
         face.style.width = `${PET_FRAME_W}px`;
         face.style.height = `${PET_FRAME_H}px`;
-        face.style.backgroundImage = `url(${pet.sheet})`;
-        face.style.backgroundSize = `${PET_FRAME_W * 8}px ${PET_FRAME_H * 9}px`;
-        const idleFrames = (pet.rowFrames && pet.rowFrames[0]) || 6;
+        face.style.backgroundImage = `url(${sheet})`;
+        const cols = sheetRows > 1 ? 8 : idleFrames;
+        face.style.backgroundSize = `${PET_FRAME_W * cols}px ${PET_FRAME_H * sheetRows}px`;
         let frame = 0;
         const tick = setInterval(() => {
             if (!face.isConnected && frame > 0) { clearInterval(tick); return; }
-            frame = (frame + 1) % idleFrames;
+            frame = (frame + 1) % (idleFrames || 1);
             face.style.backgroundPosition = `${-frame * PET_FRAME_W}px 0`;
         }, 160);
+        return face;
+    }
+
+    function petChip(pet) {
+        const chip = document.createElement('div');
+        chip.className = 'pet-chip';
+        const face = animatedFace(pet.sheet, (pet.rowFrames && pet.rowFrames[0]) || 6, pet.sheetRows || 9);
         const name = document.createElement('span');
         name.textContent = pet.name;
         chip.append(face, name);
@@ -346,6 +351,7 @@ async function init() {
             x.title = 'Remove this pet';
             x.addEventListener('click', async () => {
                 renderPets(await pywebview.api.remove_pet(pet.slug).catch(() => []));
+                renderGallery();
             });
             chip.appendChild(x);
         } else {
@@ -354,18 +360,17 @@ async function init() {
         return chip;
     }
 
+    let installedSlugs = new Set();
     function renderPets(pets) {
+        installedSlugs = new Set((pets || []).map((p) => p.slug));
         $('petList').replaceChildren(...(pets || []).map(petChip));
-        // Featured picks hide once adopted.
-        const have = new Set((pets || []).map((p) => p.slug));
-        const chips = FEATURED_PETS.filter((slug) => !have.has(slug)).map((slug) => {
-            const b = document.createElement('button');
-            b.className = 'pet-featured-chip';
-            b.textContent = slug;
-            b.addEventListener('click', () => { $('petSlug').value = slug; adoptPet(); });
-            return b;
-        });
-        $('petFeatured').replaceChildren(...chips);
+    }
+
+    async function adoptOne(slug) {
+        const result = await pywebview.api.install_pet(slug)
+            .catch(() => ({ error: 'bridge error' }));
+        if (!result.error) renderPets(result.pets);
+        return result;
     }
 
     async function adoptPet() {
@@ -375,8 +380,7 @@ async function init() {
         err.classList.remove('visible');
         $('petStatus').textContent = 'Adopting…';
         $('petInstallBtn').disabled = true;
-        const result = await pywebview.api.install_pet(slug)
-            .catch(() => ({ error: 'bridge error' }));
+        const result = await adoptOne(slug);
         $('petInstallBtn').disabled = false;
         if (result.error) {
             $('petStatus').textContent = '';
@@ -386,18 +390,190 @@ async function init() {
         }
         $('petStatus').textContent = `${result.pet.name} adopted - it will drop by the HUD soon.`;
         $('petSlug').value = '';
-        renderPets(result.pets);
+        renderGallery();
+    }
+
+    // Install every pet of a collection, narrating progress into `status`.
+    async function adoptPack(pack, status, setBusy) {
+        setBusy(true);
+        status.textContent = `Loading ${pack.name || pack.slug}…`;
+        const listed = await pywebview.api.pack_pets(pack.slug).catch(() => ({ error: 'bridge error' }));
+        if (listed.error) {
+            status.textContent = listed.error;
+            setBusy(false);
+            return 0;
+        }
+        let ok = 0;
+        for (let i = 0; i < listed.pets.length; i++) {
+            const slug = listed.pets[i];
+            status.textContent = `${pack.name || pack.slug}: adopting ${slug} (${i + 1}/${listed.pets.length})…`;
+            const r = await adoptOne(slug);
+            if (!r.error) ok++;
+        }
+        status.textContent = `${pack.name || pack.slug}: ${ok} of ${listed.pets.length} pets adopted.`;
+        setBusy(false);
+        renderGallery();
+        return ok;
+    }
+
+    function renderPackChips() {
+        const chips = (state.packs || []).map((pack) => {
+            const b = document.createElement('button');
+            b.className = 'pet-featured-chip';
+            b.textContent = `${pack.name} pack`;
+            b.title = pack.blurb || '';
+            b.addEventListener('click', () => adoptPack(pack, $('petStatus'), (busy) => { b.disabled = busy; }));
+            return b;
+        });
+        $('petPacks').replaceChildren(...chips);
+    }
+
+    // -- Full-gallery browser (index from the petdex sitemap, lazy previews) --
+
+    let galleryIndex = null;      // [{slug, name}] or null until loaded
+    let galleryShown = 24;
+    const previews = new Map();   // slug -> preview payload | 'failed'
+    let previewPump = false;
+
+    function galleryCard(entry) {
+        const card = document.createElement('div');
+        card.className = 'pet-card';
+        card.dataset.slug = entry.slug;
+        const facePocket = document.createElement('div');
+        facePocket.className = 'pet-card-pocket';
+        const p = previews.get(entry.slug);
+        if (p && p !== 'failed') facePocket.appendChild(animatedFace(p.sheet, p.frames, 1));
+        const name = document.createElement('span');
+        name.className = 'pet-card-name';
+        name.textContent = entry.name;
+        card.append(facePocket, name);
+        if (installedSlugs.has(entry.slug)) {
+            const owned = document.createElement('span');
+            owned.className = 'pet-card-owned';
+            owned.textContent = 'adopted ✓';
+            card.appendChild(owned);
+        } else {
+            const b = document.createElement('button');
+            b.className = 'pet-card-adopt';
+            b.textContent = 'Adopt';
+            b.addEventListener('click', async () => {
+                b.disabled = true;
+                b.textContent = '…';
+                const r = await adoptOne(entry.slug);
+                if (r.error) { b.disabled = false; b.textContent = 'Adopt'; }
+                else renderGallery();
+            });
+            card.appendChild(b);
+        }
+        return card;
+    }
+
+    function galleryMatches() {
+        const q = $('gallerySearch').value.trim().toLowerCase();
+        const all = galleryIndex || [];
+        return q ? all.filter((p) => p.slug.includes(q)) : all;
+    }
+
+    function renderGallery() {
+        if (galleryIndex === null || !$('galleryPanel').classList.contains('open')) return;
+        const matches = galleryMatches();
+        $('galleryGrid').replaceChildren(...matches.slice(0, galleryShown).map(galleryCard));
+        $('galleryMore').style.display = matches.length > galleryShown ? '' : 'none';
+        pumpPreviews();
+    }
+
+    // Fetch previews for visible cards a few at a time; slot each into its
+    // card as it lands (cards re-query by slug so re-renders are safe).
+    async function pumpPreviews() {
+        if (previewPump) return;
+        previewPump = true;
+        try {
+            for (;;) {
+                const card = [...document.querySelectorAll('#galleryGrid .pet-card')]
+                    .find((c) => !previews.has(c.dataset.slug));
+                if (!card) break;
+                const slug = card.dataset.slug;
+                const r = await pywebview.api.pet_preview(slug).catch(() => ({ error: 1 }));
+                previews.set(slug, r.error ? 'failed' : r.preview);
+                const live = document.querySelector(`#galleryGrid .pet-card[data-slug="${slug}"] .pet-card-pocket`);
+                if (live && !r.error) live.replaceChildren(animatedFace(r.preview.sheet, r.preview.frames, 1));
+            }
+        } finally {
+            previewPump = false;
+        }
+    }
+
+    async function openGallery() {
+        const panel = $('galleryPanel');
+        panel.classList.toggle('open');
+        $('browseToggle').textContent = panel.classList.contains('open')
+            ? 'hide the gallery' : 'browse the full gallery…';
+        if (!panel.classList.contains('open')) return;
+        if (galleryIndex === null) {
+            $('petStatus').textContent = 'Loading the gallery…';
+            const r = await pywebview.api.browse_pets().catch(() => ({ error: 'bridge error' }));
+            $('petStatus').textContent = '';
+            if (r.error) {
+                $('petError').textContent = r.error;
+                $('petError').classList.add('visible');
+                panel.classList.remove('open');
+                return;
+            }
+            galleryIndex = r.pets;
+            $('gallerySearch').placeholder = `search ${galleryIndex.length} pets…`;
+        }
+        renderGallery();
     }
 
     $('petInstallBtn').addEventListener('click', adoptPet);
     $('petSlug').addEventListener('keydown', (e) => { if (e.key === 'Enter') adoptPet(); });
-    $('petdexLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        pywebview.api.open_petdex();
-    });
+    $('browseToggle').addEventListener('click', openGallery);
+    $('gallerySearch').addEventListener('input', () => { galleryShown = 24; renderGallery(); });
+    $('galleryMore').addEventListener('click', () => { galleryShown += 24; renderGallery(); });
+    for (const id of ['petdexLink', 'petdexLinkWizard']) {
+        $(id).addEventListener('click', (e) => {
+            e.preventDefault();
+            pywebview.api.open_petdex();
+        });
+    }
     if (state.mode === 'settings') {
         pywebview.api.list_pets().then(renderPets).catch(() => {});
+        renderPackChips();
     }
+
+    // -- Onboarding starter packs --
+
+    function renderPackChoices() {
+        const rows = (state.packs || []).map((pack, i) => {
+            const label = document.createElement('label');
+            label.className = 'check pack-choice';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.value = pack.slug;
+            box.checked = i === 0; // the originals pack is the default
+            const text = document.createElement('span');
+            text.innerHTML = `<b>${pack.name}</b> <span class="dim">— ${pack.blurb || ''}</span>`;
+            label.append(box, text);
+            return label;
+        });
+        $('packChoices').replaceChildren(...rows);
+    }
+    renderPackChoices();
+
+    $('packSkipBtn').addEventListener('click', () => showStep('stepDone'));
+    $('packAdoptBtn').addEventListener('click', async () => {
+        const chosen = (state.packs || []).filter((pack) =>
+            $('packChoices').querySelector(`input[value="${pack.slug}"]`)?.checked);
+        if (!chosen.length) { showStep('stepDone'); return; }
+        $('packAdoptBtn').disabled = true;
+        $('packSkipBtn').disabled = true;
+        let total = 0;
+        for (const pack of chosen) {
+            total += await adoptPack(pack, $('packStatus'), () => {});
+        }
+        $('packStatus').textContent = `${total} pets adopted - they'll start visiting the HUD.`;
+        setTimeout(() => showStep('stepDone'), 1200);
+    });
 
     // Poll account status while the window is open (a login can complete
     // in the terminal at any moment).

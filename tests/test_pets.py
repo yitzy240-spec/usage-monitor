@@ -14,16 +14,18 @@ from PIL import Image
 
 from usage_monitor_for_claude import pets
 
-CELL = 40  # test sheets use 40x40 cells: 320x360 total, valid 8x9 geometry
+# Test sheets use 48x52 cells - the exact official 192:208 aspect at 1/4
+# scale, so the geometry validator accepts them.
+CELL_W, CELL_H = 48, 52
 
 
 def make_sheet(row_frames: dict[int, int] | None = None, mode: str = 'RGBA', fmt: str = 'WEBP') -> bytes:
     """A synthetic 8x9 sheet with opaque pixels in the requested cells."""
-    im = Image.new(mode, (CELL * pets.SHEET_COLS, CELL * pets.SHEET_ROWS), (0, 0, 0, 0) if mode == 'RGBA' else (10, 10, 10))
+    im = Image.new(mode, (CELL_W * pets.SHEET_COLS, CELL_H * pets.SHEET_ROWS), (0, 0, 0, 0) if mode == 'RGBA' else (10, 10, 10))
     if row_frames:
         for row, count in row_frames.items():
             for col in range(count):
-                box = (col * CELL + 5, row * CELL + 5, col * CELL + 20, row * CELL + 20)
+                box = (col * CELL_W + 5, row * CELL_H + 5, col * CELL_W + 20, row * CELL_H + 20)
                 im.paste((200, 90, 60, 255) if mode == 'RGBA' else (200, 90, 60), box)
     out = io.BytesIO()
     im.save(out, format=fmt)
@@ -144,6 +146,24 @@ class TestInstallPet(PetsDirsMixin):
             self._install(meta=b'{broken')
 
 
+class TestSheetGeometry(unittest.TestCase):
+    @staticmethod
+    def _sheet(w, h):
+        im = Image.new('RGBA', (w, h))
+        out = io.BytesIO()
+        im.save(out, format='WEBP')
+        return out.getvalue()
+
+    def test_v1_and_v2_layouts_accepted(self):
+        for rows in (9, 11):
+            sheet = pets._validate_sheet(self._sheet(192 * 8, 208 * rows))
+            self.assertEqual(pets._sheet_rows(sheet), rows)
+
+    def test_wrong_aspect_rejected(self):
+        with self.assertRaises(pets.PetError):
+            pets._validate_sheet(self._sheet(192 * 8, 300 * 9))  # cells not 192:208
+
+
 class TestRowFrames(unittest.TestCase):
     def test_counts_real_frames_per_row(self):
         sheet = Image.open(io.BytesIO(make_sheet({0: 3, 1: 8, 3: 2})))
@@ -201,6 +221,82 @@ class TestScanAndPayload(PetsDirsMixin):
         self._plant(pets.PETS_DIR, 'good')
         payload = pets.pets_payload()
         self.assertEqual([p['slug'] for p in payload], ['good'])
+
+
+SITEMAP = b'''<?xml version="1.0"?><urlset>
+<url><loc>https://petdex.dev/about</loc></url>
+<url><loc>https://petdex.dev/pets/boba</loc></url>
+<url><loc>https://petdex.dev/es/pets/boba</loc></url>
+<url><loc>https://petdex.dev/pets/broom-witch</loc></url>
+<url><loc>https://petdex.dev/collections/dog-squad</loc></url>
+</urlset>'''
+
+
+class TestBrowseIndex(PetsDirsMixin):
+    def test_parses_and_dedupes_locales(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=SITEMAP)):
+            index = pets.browse_pets(force=True)
+        self.assertEqual(index, [
+            {'slug': 'boba', 'name': 'Boba'},
+            {'slug': 'broom-witch', 'name': 'Broom Witch'},
+        ])
+
+    def test_disk_cache_served_within_ttl(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=SITEMAP)) as get:
+            pets.browse_pets(force=True)
+            self.assertEqual(get.call_count, 1)
+            pets.browse_pets()
+            self.assertEqual(get.call_count, 1)  # second call hits the disk cache
+
+    def test_network_failure_is_a_pet_error(self):
+        with patch.object(pets.requests, 'get', side_effect=requests.ConnectionError()):
+            with self.assertRaises(pets.PetError):
+                pets.browse_pets(force=True)
+
+
+class TestPetPreview(PetsDirsMixin):
+    def setUp(self):
+        super().setUp()
+        pets._preview_cache.clear()
+        self.addCleanup(pets._preview_cache.clear)
+
+    @staticmethod
+    def _strip(frames: int) -> bytes:
+        im = Image.new('RGBA', (192 * frames, 208), (10, 10, 10, 255))
+        out = io.BytesIO()
+        im.save(out, format='WEBP')
+        return out.getvalue()
+
+    def test_frames_derived_from_aspect_and_cached(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=self._strip(6))) as get:
+            preview = pets.pet_preview('boba')
+            self.assertEqual(preview['frames'], 6)
+            self.assertTrue(preview['sheet'].startswith('data:image/webp;base64,'))
+            self.assertIs(pets.pet_preview('boba'), preview)
+            self.assertEqual(get.call_count, 1)
+
+    def test_missing_preview_is_a_pet_error(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(status=404)):
+            with self.assertRaises(pets.PetError):
+                pets.pet_preview('nope')
+
+
+class TestPackPets(unittest.TestCase):
+    PAGE = (b'<a href="/pets/milo">x</a> stuff '
+            b'self.__next_f.push("\\"slug\\":\\"rio\\" \\"slug\\":\\"milo\\"")')
+
+    def test_extracts_from_hrefs_and_rsc_payload(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=self.PAGE)):
+            self.assertEqual(pets.pack_pets('dog-squad'), ['milo', 'rio'])
+
+    def test_empty_pack_is_a_pet_error(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=b'<html>nothing</html>')):
+            with self.assertRaises(pets.PetError):
+                pets.pack_pets('empty-pack')
+
+    def test_bad_pack_slug_rejected(self):
+        with self.assertRaises(pets.PetError):
+            pets.pack_pets('NOT A SLUG')
 
 
 class TestSmallSheet(unittest.TestCase):

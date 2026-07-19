@@ -79,13 +79,12 @@ used by CI) and watched by Dependabot.
 
 ## Art credits
 
-The visitor critters in `hud/visitors/` are from the [Dungeon Crawl Stone
-Soup tiles](https://github.com/crawl/tiles) (originally RLTiles), released
-by their artists under **CC0** (no attribution required - given gladly
-anyway). The Codex companion spritesheet is OpenAI's own published pet
-asset; Clawd is the MIT-licensed ClawdMoji recreation of the Claude Code
-logo. No other third-party characters are bundled; anything users drop
-into their local `visitors/` folder is their own responsibility.
+The Codex companion spritesheet is OpenAI's own published pet asset; Clawd
+is the MIT-licensed ClawdMoji recreation of the Claude Code logo. No other
+third-party characters are bundled (releases before fork-v1.9.0 bundled a
+small CC0 set from [Dungeon Crawl Stone Soup tiles](https://github.com/crawl/tiles),
+since replaced by petdex pets); anything users drop into their local
+`visitors/` folder is their own responsibility.
 
 Petdex pets are **not bundled** - they are community submissions downloaded
 from [petdex.dev](https://petdex.dev) (MIT-licensed project) only when the

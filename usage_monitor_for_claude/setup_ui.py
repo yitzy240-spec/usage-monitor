@@ -98,7 +98,16 @@ class _SetupApi:
                 'poll_interval': POLL_INTERVAL,
             },
             'settings_path': str(settings_write_path()),
+            'packs': self._featured_packs(),
         }
+
+    @staticmethod
+    def _featured_packs() -> list[dict[str, Any]]:
+        try:
+            from .pets import FEATURED_PACKS
+            return FEATURED_PACKS
+        except Exception:
+            return []
 
     def recheck(self) -> dict[str, bool]:
         """Live login status for both providers."""
@@ -167,6 +176,35 @@ class _SetupApi:
 
     def open_petdex(self) -> None:
         webbrowser.open('https://petdex.dev')
+
+    def browse_pets(self) -> dict[str, Any]:
+        """The full petdex gallery index (slug + display name)."""
+        from .pets import PetError, browse_pets
+        try:
+            return {'pets': browse_pets()}
+        except PetError as exc:
+            return {'error': str(exc)}
+        except Exception:
+            return {'error': 'Loading the gallery failed unexpectedly.'}
+
+    def pet_preview(self, slug: str) -> dict[str, Any]:
+        from .pets import PetError, pet_preview
+        try:
+            return {'preview': pet_preview(str(slug))}
+        except PetError as exc:
+            return {'error': str(exc)}
+        except Exception:
+            return {'error': 'No preview.'}
+
+    def pack_pets(self, slug: str) -> dict[str, Any]:
+        """Pet slugs inside a collection - the UI installs them one by one."""
+        from .pets import PetError, pack_pets
+        try:
+            return {'pets': pack_pets(str(slug))}
+        except PetError as exc:
+            return {'error': str(exc)}
+        except Exception:
+            return {'error': 'Loading that pack failed unexpectedly.'}
 
     def check_hotkey(self, spec: str) -> bool:
         return parse_hotkey(str(spec)) is not None

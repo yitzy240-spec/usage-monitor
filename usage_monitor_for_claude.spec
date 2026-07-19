@@ -21,7 +21,6 @@ a = Analysis(
         ('usage_monitor_for_claude/hud/hud.js', 'usage_monitor_for_claude/hud'),
         ('usage_monitor_for_claude/hud/hud-life.js', 'usage_monitor_for_claude/hud'),
         ('usage_monitor_for_claude/hud/codex-sheet.webp', 'usage_monitor_for_claude/hud'),
-        ('usage_monitor_for_claude/hud/visitors/*.png', 'usage_monitor_for_claude/hud/visitors'),
         ('usage_monitor_for_claude/setup/setup.html', 'usage_monitor_for_claude/setup'),
         ('usage_monitor_for_claude/setup/setup.css', 'usage_monitor_for_claude/setup'),
         ('usage_monitor_for_claude/setup/setup.js', 'usage_monitor_for_claude/setup'),

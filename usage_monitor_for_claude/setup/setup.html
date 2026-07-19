@@ -117,6 +117,21 @@
         <small class="dim" id="spriteStatus"></small>
     </section>
 
+    <!-- Onboarding: starter pets -->
+    <section class="step" id="stepPacks">
+        <h1>Pick your companions 🐾</h1>
+        <p class="dim">Animated pets from the <a href="#" id="petdexLinkWizard">petdex.dev</a>
+            community gallery visit the HUD - walking the bars, waving at Clawd and
+            Codex. Choose starter packs to adopt now (browse thousands more in
+            Settings any time).</p>
+        <div id="packChoices"></div>
+        <div class="actions">
+            <button id="packSkipBtn">Skip for now</button>
+            <button class="primary" id="packAdoptBtn">Adopt selected</button>
+        </div>
+        <small class="dim" id="packStatus"></small>
+    </section>
+
     <!-- Petdex pets (settings mode) -->
     <section class="step settings-only" id="stepPetdex">
         <h1>Petdex pets</h1>
@@ -128,10 +143,16 @@
             <input type="text" id="petSlug" spellcheck="false" placeholder="pet name, e.g. broom-witch">
             <button class="primary" id="petInstallBtn">Adopt</button>
         </div>
-        <div class="pet-featured" id="petFeatured"></div>
+        <div class="pet-featured" id="petPacks"></div>
         <div class="pet-list" id="petList"></div>
         <small class="error" id="petError"></small>
         <small class="dim" id="petStatus"></small>
+        <button class="link" id="browseToggle">browse the full gallery…</button>
+        <div id="galleryPanel">
+            <input type="text" id="gallerySearch" spellcheck="false" placeholder="search pets…">
+            <div class="pet-grid" id="galleryGrid"></div>
+            <div class="actions"><button id="galleryMore">show more</button></div>
+        </div>
     </section>
 
     <!-- Onboarding: done -->

@@ -33,7 +33,7 @@ __all__ = ['FORK_VERSION', 'check_for_update', 'download_and_apply', 'cleanup_ol
 # The fork's own version track (upstream keeps __version__). The release
 # workflow refuses to build a tag that does not match this constant, so it
 # cannot silently drift.
-FORK_VERSION = '1.8.0'
+FORK_VERSION = '1.9.0'
 
 RELEASES_API = 'https://api.github.com/repos/yitzy240-spec/usage-monitor/releases/latest'
 _EXE_NAME = 'UsageMonitorForClaude.exe'

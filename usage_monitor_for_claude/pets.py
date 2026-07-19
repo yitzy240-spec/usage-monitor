@@ -26,7 +26,10 @@ from typing import Any
 
 import requests
 
-__all__ = ['install_pet', 'remove_pet', 'installed_pets', 'pets_payload', 'pets_rev', 'PetError']
+__all__ = [
+    'install_pet', 'remove_pet', 'installed_pets', 'pets_payload', 'pets_rev',
+    'browse_pets', 'pet_preview', 'pack_pets', 'FEATURED_PACKS', 'PetError',
+]
 
 PETDEX_API = 'https://petdex.dev/api/install-pet/'
 # The petdex server normalizes stored asset URLs to its canonical R2 host;
@@ -39,7 +42,8 @@ _TIMEOUT = 20
 _MAX_JSON_BYTES = 64_000
 _MAX_SHEET_BYTES = 10_000_000
 SHEET_COLS = 8
-SHEET_ROWS = 9
+SHEET_ROWS = 9          # rows every sheet must have (v1); v2 sheets add more
+_MAX_SHEET_ROWS = 16    # sanity ceiling for extended layouts
 # Frame counts per row on the official Codex sheet - the fallback when a
 # sheet has no alpha channel to measure real per-row content from.
 _DEFAULT_ROW_FRAMES = [6, 8, 8, 4, 5, 8, 8, 8, 6]
@@ -87,26 +91,36 @@ def _fetch(url: str, cap: int) -> bytes:
     return data
 
 
+def _sheet_rows(sheet: 'Any') -> int:
+    """Animation rows in a sheet: cells are 192:208, columns always 8."""
+    cell_h = (sheet.width / SHEET_COLS) * 208 / 192
+    return round(sheet.height / cell_h) if cell_h else 0
+
+
 def _row_frames(sheet: 'Any') -> list[int]:
     """Count real frames per animation row via the alpha channel.
 
     Pet authors don't always fill all 8 cells of a row; playing into empty
     cells makes the pet flash invisible. Sheets without alpha fall back to
-    the official row lengths.
+    the official row lengths. Only the first 9 (official) rows matter to the
+    HUD - v2 sheets' extra rows are ignored.
     """
     if 'A' not in sheet.getbands():
         return list(_DEFAULT_ROW_FRAMES)
+    rows = max(_sheet_rows(sheet), 1)
     cell_w = sheet.width // SHEET_COLS
-    cell_h = sheet.height // SHEET_ROWS
+    cell_h = sheet.height // rows
     alpha = sheet.getchannel('A')
     counts = []
-    for row in range(SHEET_ROWS):
+    for row in range(min(rows, SHEET_ROWS)):
         count = 0
         for col in range(SHEET_COLS):
             box = (col * cell_w, row * cell_h, (col + 1) * cell_w, (row + 1) * cell_h)
             if alpha.crop(box).getbbox() is not None:
                 count = col + 1
         counts.append(max(count, 1))
+    while len(counts) < SHEET_ROWS:
+        counts.append(1)
     return counts
 
 
@@ -117,7 +131,16 @@ def _validate_sheet(data: bytes) -> 'Any':
         sheet.load()
     except Exception as exc:
         raise PetError('The spritesheet is not a readable image.') from exc
-    if sheet.width % SHEET_COLS or sheet.height % SHEET_ROWS or sheet.width // SHEET_COLS < 32:
+    rows = _sheet_rows(sheet)
+    cell_h = sheet.height / rows if rows else 0
+    ok = (
+        sheet.width % SHEET_COLS == 0
+        and sheet.width // SHEET_COLS >= 32
+        and SHEET_ROWS <= rows <= _MAX_SHEET_ROWS
+        and cell_h and sheet.height % rows == 0
+        and abs(cell_h - (sheet.width / SHEET_COLS) * 208 / 192) < 1
+    )
+    if not ok:
         raise PetError('The spritesheet is not in the 8x9 Codex pet format.')
     return sheet
 
@@ -234,7 +257,7 @@ def pets_payload() -> list[dict[str, Any]]:
     sheet; one is derived in-memory here.
     """
     global _payload_cache
-    pets = installed_pets()[:12]
+    pets = installed_pets()[:24]
     key = tuple((str(p['sheet']), _mtime(p['sheet'])) for p in pets)
     if _payload_cache is not None and _payload_cache[0] == key:
         return _payload_cache[1]
@@ -253,6 +276,7 @@ def pets_payload() -> list[dict[str, Any]]:
             'source': pet['source'],
             'sheet': 'data:image/webp;base64,' + base64.b64encode(blob).decode('ascii'),
             'rowFrames': _row_frames(sheet),
+            'sheetRows': _sheet_rows(sheet),
         })
     _payload_cache = (key, out)
     return out
@@ -263,3 +287,118 @@ def _mtime(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Gallery browsing - a searchable index + per-pet animated previews
+# ---------------------------------------------------------------------------
+
+# petdex has no public list API; its sitemap enumerates every approved pet
+# (~3.7k as of 2026-07). One fetch a day is plenty for a browse index.
+_SITEMAP_URL = 'https://petdex.dev/sitemap.xml'
+_MAX_SITEMAP_BYTES = 40_000_000
+_INDEX_TTL_SECONDS = 24 * 3600
+_INDEX_FILE = 'gallery-index.json'
+_SITEMAP_SLUG_RE = re.compile(r'petdex\.dev/pets/([a-z0-9][a-z0-9-]{0,62})<')
+
+# Every pet exposes a lightweight idle-row strip (cells 192x208) at a
+# guessable URL - browse cards animate from this without the full sheet.
+_PREVIEW_URL = 'https://assets.petdex.dev/pets/{slug}/preview.webp'
+_MAX_PREVIEW_BYTES = 500_000
+_PREVIEW_CACHE_MAX = 200
+
+_preview_cache: dict[str, dict[str, Any]] = {}
+
+
+def browse_pets(force: bool = False) -> list[dict[str, Any]]:
+    """The full gallery as [{slug, name}], cached on disk for a day."""
+    import time
+    index_path = PETS_DIR / _INDEX_FILE
+    if not force:
+        try:
+            if time.time() - index_path.stat().st_mtime < _INDEX_TTL_SECONDS:
+                cached = json.loads(index_path.read_text(encoding='utf-8'))
+                if isinstance(cached, list) and cached:
+                    return cached
+        except (OSError, ValueError):
+            pass
+
+    try:
+        xml = _fetch(_SITEMAP_URL, _MAX_SITEMAP_BYTES).decode('utf-8', 'replace')
+    except (requests.RequestException, PetError) as exc:
+        raise PetError('Could not load the petdex gallery - check your connection.') from exc
+    slugs = sorted(set(_SITEMAP_SLUG_RE.findall(xml)))
+    index = [{'slug': s, 'name': s.replace('-', ' ').title()} for s in slugs]
+    if index:
+        try:
+            PETS_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = index_path.with_suffix('.tmp')
+            tmp.write_text(json.dumps(index), encoding='utf-8')
+            os.replace(tmp, index_path)
+        except OSError:
+            pass
+    return index
+
+
+def pet_preview(slug: str) -> dict[str, Any]:
+    """A pet's idle-strip preview as a data URI + frame count (cached)."""
+    slug = (slug or '').strip().lower()
+    if not _SLUG_RE.match(slug):
+        raise PetError('Bad pet name.')
+    hit = _preview_cache.get(slug)
+    if hit is not None:
+        return hit
+
+    from PIL import Image
+    try:
+        data = _fetch(_PREVIEW_URL.format(slug=slug), _MAX_PREVIEW_BYTES)
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except (requests.RequestException, PetError, OSError) as exc:
+        raise PetError('No preview available.') from exc
+    # Idle strips are N cells of 192x208 side by side; derive N from the
+    # aspect ratio rather than trusting exact pixel sizes.
+    cell_w = im.height * 192 / 208
+    frames = max(1, min(8, round(im.width / cell_w))) if cell_w else 1
+    preview = {
+        'slug': slug,
+        'frames': frames,
+        'sheet': 'data:image/webp;base64,' + base64.b64encode(data).decode('ascii'),
+    }
+    if len(_preview_cache) >= _PREVIEW_CACHE_MAX:
+        _preview_cache.pop(next(iter(_preview_cache)))
+    _preview_cache[slug] = preview
+    return preview
+
+
+# Community collections double as installable "packs". These four are the
+# hand-picked featured set (crafter-originals = petdex's own original
+# mascots, the default starter pack).
+FEATURED_PACKS = [
+    {'slug': 'crafter-originals', 'name': 'Crafter Originals', 'blurb': 'petdex’s own 20 original mascots'},
+    {'slug': 'dog-squad', 'name': 'Dog Squad', 'blurb': 'a pile of very good dogs'},
+    {'slug': 'cats-universe', 'name': 'Cats Universe', 'blurb': 'every kind of cat'},
+    {'slug': 'coders-club', 'name': 'Coders Club', 'blurb': 'developer-themed companions'},
+]
+
+_COLLECTION_URL = 'https://petdex.dev/collections/{slug}'
+_MAX_PAGE_BYTES = 8_000_000
+# Collection pages are server-rendered Next.js; pet slugs appear both as
+# plain hrefs and inside the RSC flight payload (escaped JSON).
+_PAGE_HREF_RE = re.compile(r'href="/pets/([a-z0-9][a-z0-9-]{0,62})"')
+_PAGE_RSC_RE = re.compile(r'\\"slug\\":\\"([a-z0-9][a-z0-9-]{0,62})\\"')
+
+
+def pack_pets(slug: str) -> list[str]:
+    """Pet slugs inside a petdex collection ("pack")."""
+    slug = (slug or '').strip().lower()
+    if not _SLUG_RE.match(slug):
+        raise PetError('Pack names are lowercase letters, digits and dashes.')
+    try:
+        html = _fetch(_COLLECTION_URL.format(slug=slug), _MAX_PAGE_BYTES).decode('utf-8', 'replace')
+    except (requests.RequestException, PetError) as exc:
+        raise PetError('Could not load that pack from petdex.dev.') from exc
+    slugs = sorted(set(_PAGE_HREF_RE.findall(html)) | set(_PAGE_RSC_RE.findall(html)))
+    if not slugs:
+        raise PetError(f'No pets found in a pack named "{slug}".')
+    return slugs
