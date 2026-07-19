@@ -8,6 +8,8 @@
 > - **First-run wizard + Settings window** — onboarding checks both CLI logins with fix-it buttons, records your hotkey by pressing it, and offers autostart; tray → Settings… later. No in-app OAuth: the `claude`/`codex` CLIs own sign-in.
 > - **Clawd tray icon** — severity-tinted mascot over Claude/Codex mini bars (`tray_style: "bars"` restores upstream's icon).
 >
+> **Security:** releases are unsigned but *verifiable* — built from this public source by GitHub Actions with [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) (`gh attestation verify UsageMonitorForClaude.exe --owner yitzy240-spec`) and SHA256 checksums. Full credential/endpoint inventory in [SECURITY.md](SECURITY.md).
+>
 > New modules: `codex_api.py`, `codex_poller.py`, `claude_sessions.py`, `hud.py` + `hud/`, `setup_ui.py` + `setup/`, `clawd_icon.py`. Everything below this note is the upstream README.
 
 [![Feature Ideas](https://img.shields.io/badge/Feature_Ideas-Vote_%26_Discuss-blue?style=for-the-badge&logo=github)](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/categories/ideas)

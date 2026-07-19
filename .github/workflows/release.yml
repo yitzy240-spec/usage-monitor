@@ -1,0 +1,59 @@
+# Release provenance: every fork-v* tag is built FROM THE PUBLIC SOURCE on
+# GitHub's runners, checksummed, and cryptographically attested. Nobody has
+# to trust a binary built on a private machine - verify any release with:
+#
+#   gh attestation verify UsageMonitorForClaude.exe --owner yitzy240-spec
+#   certutil -hashfile UsageMonitorForClaude.exe SHA256   (compare SHA256SUMS.txt)
+name: release
+
+on:
+  push:
+    tags:
+      - 'fork-v*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements-lock.txt
+
+      - name: Run test suite
+        run: python -m pytest tests -q
+
+      - name: Build single-file EXE
+        run: python -m PyInstaller usage_monitor_for_claude.spec --noconfirm
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash dist\UsageMonitorForClaude.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  UsageMonitorForClaude.exe" | Out-File -Encoding ascii dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/UsageMonitorForClaude.exe
+
+      - name: Upload to release (created if the tag has none yet)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --generate-notes
+          }
+          gh release upload "${{ github.ref_name }}" dist/UsageMonitorForClaude.exe dist/SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
