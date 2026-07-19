@@ -13,6 +13,31 @@ from usage_monitor_for_claude.instance_id import parse_config_dir
 
 _verbose = '--verbose' in sys.argv
 
+# CI smoke test of the FROZEN build: --selftest exercises the runtime
+# capabilities that PyInstaller excludes can silently break (a stripped
+# PIL WebP codec shipped in fork-v1.9.0 and broke pet installs). Exits 0
+# only when everything works; no window, no tray.
+if '--selftest' in sys.argv:
+    def _selftest() -> int:
+        try:
+            import io
+            from PIL import Image
+            # WebP must round-trip: pets are decoded from and saved as WebP.
+            buf = io.BytesIO()
+            Image.new('RGBA', (16, 16), (200, 90, 60, 255)).save(buf, format='WEBP')
+            decoded = Image.open(io.BytesIO(buf.getvalue()))
+            decoded.load()
+            assert decoded.size == (16, 16) and (decoded.format or '') == 'WEBP'
+            # The lazily-imported feature modules must be bundled.
+            from usage_monitor_for_claude import claude_oauth, pets, sprite_builder, updater  # noqa: F401
+            import requests  # noqa: F401
+            return 0
+        except Exception:
+            traceback.print_exc()
+            return 1
+
+    sys.exit(_selftest())
+
 # --config-dir selects which Claude account to monitor. It must be
 # resolved into CLAUDE_CONFIG_DIR before any other package import:
 # api, settings, verbose and i18n all read the variable at import or

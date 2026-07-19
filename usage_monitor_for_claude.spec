@@ -42,7 +42,10 @@ a = Analysis(
         'unittest', 'test',
         'xmlrpc', 'pydoc',
         'tkinter', '_tkinter',
-        'PIL._avif', 'PIL._webp',
+        # PIL._webp must NOT be excluded: petdex pet sheets are WebP and are
+        # decoded/encoded with Pillow (field failure 2026-07-19 - the frozen
+        # app silently couldn't install pets or build previews).
+        'PIL._avif',
         'PIL._imagingcms', 'PIL._imagingmath', 'PIL._imagingtk', 'PIL._imagingmorph',
         'setuptools', '_distutils_hack',
         'asyncio', 'concurrent',

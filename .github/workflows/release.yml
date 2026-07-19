@@ -40,6 +40,13 @@ jobs:
       - name: Build single-file EXE
         run: python -m PyInstaller usage_monitor_for_claude.spec --noconfirm
 
+      - name: Frozen-build self-test (catches over-aggressive spec excludes)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\UsageMonitorForClaude.exe -ArgumentList '--selftest' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "frozen self-test failed (exit $($p.ExitCode)) - a spec exclude probably stripped a needed runtime piece" }
+          "frozen self-test OK"
+
       - name: Checksums
         shell: pwsh
         run: |
