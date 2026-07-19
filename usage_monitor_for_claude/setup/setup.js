@@ -34,6 +34,7 @@ function collectSettings() {
         hud_hotkey: $('hotkeyInput').value.trim(),
         hud_linger: Number($('lingerInput').value),
         hud_sessions: $('sessionsInput').checked,
+        hud_visitors: $('visitorsInput').checked,
         codex_enabled: $('codexInput').checked,
     };
 }
@@ -44,6 +45,7 @@ function settingsChanged() {
     return now.hud_hotkey !== was.hud_hotkey
         || now.hud_linger !== was.hud_linger
         || now.hud_sessions !== was.hud_sessions
+        || now.hud_visitors !== was.hud_visitors
         || now.codex_enabled !== was.codex_enabled;
 }
 
@@ -147,6 +149,7 @@ async function init() {
     $('lingerInput').value = state.settings.hud_linger;
     $('lingerVal').textContent = `${state.settings.hud_linger}s`;
     $('sessionsInput').checked = state.settings.hud_sessions;
+    $('visitorsInput').checked = state.settings.hud_visitors !== false;
     $('codexInput').checked = state.settings.codex_enabled;
     $('autostartField').style.display = state.frozen ? '' : 'none';
     $('autostartInput').checked = state.autostart;
@@ -244,7 +247,7 @@ async function init() {
     // Sprite Builder
     let pendingGrid = null;
     function renderGridPreview(grid) {
-        const px = 6;
+        const px = Math.max(3, Math.round(130 / grid.rows.length));
         const inner = document.createElement('div');
         inner.style.width = `${px}px`;
         inner.style.height = `${px}px`;

@@ -320,7 +320,9 @@ const hudLife = (() => {
 
     function gridElement(critter) {
         const el = document.createElement('div');
-        const px = critter.px || 3;
+        // Density-aware: fine 24-row grids render at 1px/cell, chunky 8-row
+        // grids at 3px - similar on-screen size, very different fidelity.
+        const px = critter.px || Math.max(1, Math.round(26 / critter.rows.length));
         const inner = document.createElement('div');
         inner.style.width = `${px}px`;
         inner.style.height = `${px}px`;
@@ -362,6 +364,7 @@ const hudLife = (() => {
 
     function collectPlatforms(layer) {
         const base = layer.getBoundingClientRect();
+        const card = document.getElementById('card').getBoundingClientRect();
         const platforms = [];
         const add = (rect, inset = 2) => {
             if (rect.width < 30) return;
@@ -371,14 +374,15 @@ const hudLife = (() => {
                 y: rect.top - base.top,
             });
         };
-        // Deliberately NOT the header: landing there leaves the critter
-        // clipped behind the rim - dropping through the header zone onto
-        // the provider rows reads as "popping in over the top".
         for (const el of document.querySelectorAll('.row-bar, .provider-head, .ctx.visible')) {
             add(el.getBoundingClientRect());
         }
-        // The floor: bottom of the card.
-        platforms.push({ left: 4, right: base.width - 4, y: base.height - 4 });
+        // The floor: the card's bottom edge (inside the padding).
+        platforms.push({
+            left: card.left - base.left + 6,
+            right: card.right - base.left - 6,
+            y: card.bottom - base.top - 5,
+        });
         return platforms.sort((a, b) => a.y - b.y);
     }
 
@@ -393,9 +397,13 @@ const hudLife = (() => {
     }
 
     function spawnVisitor() {
-        const layer = document.getElementById('visitorLayer');
-        if (!layer || layer.clientWidth < 100) return;
+        if (lastData && lastData.visitors_enabled === false) return;
+        const layerFront = document.getElementById('visitorLayer');
+        const layerBack = document.getElementById('visitorLayerBack');
+        const cardEl = document.getElementById('card');
+        if (!layerFront || !layerBack || layerFront.clientWidth < 100) return;
         visitorBusy = true;
+        const layer = layerFront; // shared coordinate space (both span the window)
 
         const pick = pickVisitor();
         const content = pick.kind === 'img'
@@ -405,19 +413,63 @@ const hudLife = (() => {
         const el = document.createElement('div');
         el.className = 'visitor';
         el.appendChild(content);
-        layer.appendChild(el);
+        layerBack.appendChild(el); // born BEHIND the card
 
-        const w = 24, h = 24;
-        let x = 30 + Math.random() * (layer.clientWidth - 90);
-        let y = -h - 4;            // starts hidden above the rim
+        // Measured, not assumed: real sizes are what make feet land ON
+        // surfaces instead of sinking through them.
+        let w = 24, h = 24;
+        function measure() {
+            w = el.offsetWidth || w;
+            h = el.offsetHeight || h;
+        }
+
+        const cardRect = () => {
+            const b = layer.getBoundingClientRect();
+            const c = cardEl.getBoundingClientRect();
+            return { top: c.top - b.top, bottom: c.bottom - b.top, left: c.left - b.left, right: c.right - b.left };
+        };
+
+        const card = cardRect();
+        // With a transparent apron the critter peeks from behind the rim;
+        // without one (card == window) it drops straight into view instead
+        // of lingering half-clipped at the top edge.
+        const hasApron = card.top > 20;
+        let x = card.left + 30 + Math.random() * (card.right - card.left - 60);
+        let y = hasApron ? card.top + 6 : -26;
         let vx = (Math.random() < 0.5 ? 1 : -1) * (10 + Math.random() * 12);
         let vy = 0;
-        let mode = 'drop';         // drop | walk | pause | leave
-        let modeUntil = 0;
+        let mode = hasApron ? 'peek' : 'drop';  // peek | climb | drop | walk | pause | greet | leave
+        let modeUntil = performance.now() + 900 + Math.random() * 900;
+        if (!hasApron) layerFront.appendChild(el);
         let platforms = collectPlatforms(layer);
         const leaveAt = Date.now() + 15000 + Math.random() * 20000;
         let lastT = performance.now();
         let lastNotice = 0;
+
+        // Visitors pay a social call: pick a resident to greet on the way.
+        let greetKey = Math.random() < 0.5 ? 'claude' : 'codex';
+        function greetTarget() {
+            if (!greetKey) return null;
+            const box = els[`${greetKey}Sprite`].parentElement.getBoundingClientRect();
+            const base = layer.getBoundingClientRect();
+            return { x: box.right - base.left + 14, y: box.bottom - base.top };
+        }
+
+        function doGreet() {
+            const box = els[`${greetKey}Sprite`].parentElement;
+            pulse(el.firstChild || el, 'hop', 550);
+            if (greetKey === 'codex') {
+                if (!codexTimer || codexBaseline !== 'ko') playCodex('wave', { durationMs: 1200 });
+            } else if (claudeBaseline === 'idle') {
+                clawdOverride = 'cheer';
+                drawClawd('cheer');
+                pulse(els.claudeSprite, 'hop', 550);
+                setTimeout(() => { clawdOverride = null; clawdResting(); }, 1400);
+            }
+            if (Math.random() < 0.6) bubble(box, 'hello');
+            if (Math.random() < 0.5) floatBubble(layer, x, y, '!');
+            greetKey = null; // one social call per visit
+        }
 
         function render() {
             el.style.transform = `translate(${x - w / 2}px, ${y}px) scaleX(${vx < 0 ? -1 : 1})`;
@@ -436,13 +488,34 @@ const hudLife = (() => {
         function step(t) {
             const dt = Math.min((t - lastT) / 1000, 0.05);
             lastT = t;
+            measure();
             const floor = platformBelow(platforms, x, y + h - 2);
 
-            if (pick.floats) {
+            if (mode === 'peek') {
+                // Rising from behind the rim: only the head clears the card
+                // top - the card itself occludes the body (back layer).
+                const target = card.top - h * 0.55;
+                y = Math.max(target, y - 26 * dt);
+                y += Math.sin(t / 160) * 0.15; // curious little bob
+                if (t >= modeUntil) {
+                    mode = 'climb';
+                    modeUntil = t + 450;
+                }
+            } else if (mode === 'climb') {
+                // Hop up onto the rim, crossing to the FRONT layer mid-hop.
+                if (el.parentElement !== layerFront) layerFront.appendChild(el);
+                const target = card.top - h + 2;
+                y += (target - y) * Math.min(1, dt * 9);
+                if (t >= modeUntil) {
+                    mode = 'drop';
+                    vy = 0;
+                    platforms = collectPlatforms(layer);
+                }
+            } else if (pick.floats) {
                 // Floaters drift on a sine path between the furniture.
-                y += Math.sin(t / 500) * 0.3 + (mode === 'leave' ? -30 * dt : 8 * dt * (y < 40 ? 1 : 0.15));
+                y += Math.sin(t / 500) * 0.3 + (mode === 'leave' ? -34 * dt : 8 * dt * (y < card.top + 24 ? 1 : 0.15));
                 x += vx * dt;
-                if (x < 16 || x > layer.clientWidth - 16) vx = -vx;
+                if (x < card.left + 12 || x > card.right - 12) vx = -vx;
             } else if (mode === 'drop') {
                 vy += 260 * dt; // gravity
                 y += vy * dt;
@@ -454,7 +527,22 @@ const hudLife = (() => {
                     content.classList.add('land-squash');
                     setTimeout(() => content.classList.remove('land-squash'), 240);
                 }
+            } else if (mode === 'greet') {
+                if (t >= modeUntil) mode = 'walk';
             } else if (mode === 'walk') {
+                // Steer toward the resident being visited when one is set.
+                const target = greetTarget();
+                if (target) {
+                    if (Math.abs(y + h - target.y) < 8 && Math.abs(x - target.x) < 16) {
+                        mode = 'greet';
+                        modeUntil = t + 2400;
+                        doGreet();
+                    } else if (Math.abs(y + h - target.y) < 8) {
+                        vx = Math.sign(target.x - x) * Math.abs(vx || 12);
+                    } else if (y + h > target.y + 10) {
+                        greetKey = null; // fell past them; maybe next time
+                    }
+                }
                 x += vx * dt;
                 const on = platforms.find((p) => Math.abs(p.y - h - y) < 3 && x >= p.left - 6 && x <= p.right + 6);
                 if (!on) {

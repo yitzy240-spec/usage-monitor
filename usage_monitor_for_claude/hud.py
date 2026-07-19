@@ -31,7 +31,7 @@ import webview  # type: ignore[import-untyped]  # no type stubs available
 from .claude_sessions import active_sessions
 from .i18n import T
 from .settings import (
-    HUD_HOTKEY, HUD_LINGER, HUD_POSITION, HUD_SESSIONS, HUD_SIZE, HUD_THRESHOLDS,
+    HUD_HOTKEY, HUD_LINGER, HUD_POSITION, HUD_SESSIONS, HUD_SIZE, HUD_THRESHOLDS, HUD_VISITORS,
     settings_write_path,
 )
 
@@ -158,8 +158,7 @@ def _visitor_grids() -> list[dict[str, Any]]:
             except (OSError, ValueError):
                 continue
             if grid is not None:
-                grid['px'] = 3
-                grids.append(grid)
+                grids.append(grid)  # px stays density-derived in JS
     except OSError:
         pass
     _visitor_grid_cache = grids
@@ -241,8 +240,8 @@ def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str
 class UsageHud:
     """Hold-to-peek HUD window driven by a global hotkey."""
 
-    WIDTH = 380
-    HEIGHT = 236
+    WIDTH = 380      # card width, logical px
+    HEIGHT = 236     # initial card height
 
     def __init__(self, app: UsageMonitorForClaude) -> None:
         self.app = app
@@ -311,6 +310,7 @@ class UsageHud:
             'visitors': _visitor_data_uris(),
             'visitors_pack': _visitor_pack(),
             'visitor_grids': _visitor_grids(),
+            'visitors_enabled': HUD_VISITORS,
         }
 
     # Window
@@ -332,7 +332,13 @@ class UsageHud:
         self._window.events.closed += self._on_window_closed
 
     def _intended_size(self) -> tuple[int, int]:
-        """Current target size in logical px (manual override or auto)."""
+        """Current target size in logical px (manual override or auto).
+
+        The window IS the card. A transparent apron for over-the-rim critter
+        entrances was tried and reverted: WebView2 renders nothing through
+        either pywebview transparent=True or LWA_COLORKEY layered windows -
+        real per-pixel transparency there needs DirectComposition work.
+        """
         if self._manual_size is not None:
             return self._manual_size
         return self.WIDTH, self._height
@@ -426,7 +432,9 @@ class UsageHud:
         cursor = ctypes.wintypes.POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(cursor))
         self._resize_anchor = (cursor.x, cursor.y)
-        self._resize_anchor_size = self._intended_size()
+        # Anchor CARD dimensions (manual size is card-space; the window adds
+        # the apron on top - mixing the two inflates the card every resize).
+        self._resize_anchor_size = self._manual_size or (self.WIDTH, self._height)
         dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or ctypes.windll.user32.GetDpiForSystem()
         self._resize_scale = dpi / _BASELINE_DPI
         self._resizing = True
@@ -441,7 +449,7 @@ class UsageHud:
         dy = int((cursor.y - self._resize_anchor[1]) / self._resize_scale)
         width = max(300, min(900, self._resize_anchor_size[0] + dx))
         height = max(160, min(1200, self._resize_anchor_size[1] + dy))
-        if (width, height) != self._intended_size():
+        if (width, height) != self._manual_size:
             self._manual_size = (width, height)
             self._apply_size()
         return True
@@ -623,7 +631,7 @@ class UsageHud:
             pass
 
     def _set_height(self, height: int) -> None:
-        """Grow/shrink the window to the content height reported by JS.
+        """Grow/shrink the window to the CARD height reported by JS.
 
         Only in auto-size mode - once the user has resized manually, their
         size is the authority and overflowing content scrolls instead.
@@ -803,6 +811,9 @@ class _HudApi:
 
     def end_resize(self) -> None:
         self._hud._end_resize()
+
+    def open_settings(self) -> None:
+        self._hud.app.on_open_setup()
 
     def close(self) -> None:
         self._hud.hide()

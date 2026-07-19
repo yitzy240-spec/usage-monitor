@@ -238,15 +238,17 @@ header {
     100% { opacity: 0; transform: translate(var(--cx), 34px) rotate(220deg); }
 }
 
-/* Visitor critters roam the whole card like a climbing frame: they drop in
-   over the top rim, walk along the bars, and investigate the furniture. */
-#visitorLayer {
+/* Visitor critters roam the card like a climbing frame. Two depth layers
+   spanning the WHOLE window: back sits behind the card (rim-peeking bodies
+   are occluded by it), front sits above (walking on the furniture). */
+#visitorLayerBack, #visitorLayer {
     position: absolute;
     inset: 0;
     pointer-events: none;
     overflow: hidden;
-    z-index: 4;
 }
+#visitorLayerBack { z-index: 1; }
+#visitorLayer { z-index: 4; }
 .visitor {
     position: absolute;
     left: 0; top: 0;

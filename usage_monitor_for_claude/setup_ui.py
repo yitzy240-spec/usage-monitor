@@ -38,7 +38,7 @@ from .codex_api import read_codex_tokens
 from .hud import parse_hotkey
 from .settings import (
     CODEX_ENABLED, HUD_ENABLED, HUD_HOTKEY, HUD_LINGER, HUD_SESSIONS, HUD_THRESHOLDS,
-    POLL_INTERVAL, settings_write_path,
+    HUD_VISITORS, POLL_INTERVAL, settings_write_path,
 )
 
 _SETUP_DIR = Path(__file__).parent / 'setup'
@@ -47,7 +47,7 @@ _ONBOARD_MARKER = '.usage-monitor-onboarded'
 # Keys the UI may write, with validators (None-return = drop invalid).
 _SAVABLE_KEYS = frozenset({
     'hud_enabled', 'hud_hotkey', 'hud_linger', 'hud_thresholds', 'hud_sessions',
-    'codex_enabled', 'poll_interval',
+    'hud_visitors', 'codex_enabled', 'poll_interval',
 })
 
 __all__ = ['SetupWindow', 'should_show_onboarding', 'mark_onboarded']
@@ -93,6 +93,7 @@ class _SetupApi:
                 'hud_linger': HUD_LINGER,
                 'hud_thresholds': list(HUD_THRESHOLDS[:2]),
                 'hud_sessions': HUD_SESSIONS,
+                'hud_visitors': HUD_VISITORS,
                 'codex_enabled': CODEX_ENABLED,
                 'poll_interval': POLL_INTERVAL,
             },
@@ -202,7 +203,7 @@ def _clean_values(values: dict[str, Any]) -> dict[str, Any]:
     for key, value in values.items():
         if key not in _SAVABLE_KEYS:
             continue
-        if key in ('hud_enabled', 'hud_sessions', 'codex_enabled'):
+        if key in ('hud_enabled', 'hud_sessions', 'hud_visitors', 'codex_enabled'):
             if isinstance(value, bool):
                 cleaned[key] = value
         elif key == 'hud_hotkey':

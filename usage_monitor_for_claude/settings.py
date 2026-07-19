@@ -31,7 +31,7 @@ __all__ = [
     'CODEX_ENABLED', 'CODEX_POLL_INTERVAL',
     'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
-    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_LINGER', 'HUD_POSITION', 'HUD_SESSIONS', 'HUD_SIZE', 'HUD_THRESHOLDS',
+    'HUD_ENABLED', 'HUD_HOTKEY', 'HUD_LINGER', 'HUD_POSITION', 'HUD_SESSIONS', 'HUD_SIZE', 'HUD_THRESHOLDS', 'HUD_VISITORS',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
     'ON_DOUBLE_CLICK_COMMAND', 'ON_RESET_COMMAND', 'ON_STARTUP_COMMAND', 'ON_THRESHOLD_COMMAND',
@@ -59,7 +59,7 @@ _PERCENT_KEYS = frozenset({'alert_time_aware_below'})
 _STRING_KEYS = frozenset({'currency_symbol', 'language', 'hud_hotkey'})
 _VALID_TIME_FORMATS = frozenset({'24h', '12h'})
 _COMMAND_KEYS = frozenset({'on_double_click_command', 'on_reset_command', 'on_startup_command', 'on_threshold_command'})
-_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update', 'codex_enabled', 'hud_enabled', 'hud_sessions'})
+_BOOL_KEYS = frozenset({'alert_time_aware', 'notify_claude_update', 'codex_enabled', 'hud_enabled', 'hud_sessions', 'hud_visitors'})
 _STRING_LIST_KEYS = frozenset({'tooltip_fields', 'compact_hide'})
 _WILDCARD_STRING_LIST_KEYS = frozenset({'popup_fields'})
 _VALID_BAR_MODES = frozenset({'utilization', 'overage'})
@@ -392,6 +392,8 @@ HUD_HOTKEY: str = _S.get('hud_hotkey', 'ctrl+alt+space')
 HUD_THRESHOLDS: list[float] = _S.get('hud_thresholds', [70, 90])
 # Show the context-window fill of currently active Claude Code sessions
 HUD_SESSIONS: bool = _S.get('hud_sessions', True)
+# Visitor critters wandering the HUD (turn off if distracting)
+HUD_VISITORS: bool = _S.get('hud_visitors', True)
 # Where the HUD appears: 'auto' (bottom-right above the tray) or a dragged
 # [x, y] top-left in physical pixels (written back automatically on drag).
 HUD_POSITION: str | list = _S.get('hud_position', 'auto')
