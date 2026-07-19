@@ -1103,6 +1103,7 @@ class TestClawdTrayIcon(unittest.TestCase):
         self.app = None
 
     def test_clawd_branch_renders_both_providers(self):
+        self.app.codex = object()  # hermetic: machines without a codex login
         self.app._last_response = {
             'five_hour': {'utilization': 47.0, 'resets_at': None},
             'seven_day': {'utilization': 20.0, 'resets_at': None},
