@@ -27,6 +27,7 @@ from .codex_poller import CodexPoller
 from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
 from .instance_id import effective_config_dir, is_default_config_dir
+from . import updater
 from .hud import UsageHud
 from .setup_ui import SetupWindow, should_show_onboarding
 from .settings import (
@@ -125,6 +126,10 @@ class UsageMonitorForClaude:
         # Hold-to-peek HUD (global hotkey)
         self.hud: UsageHud | None = UsageHud(self) if HUD_ENABLED else None
 
+        # In-app updater state (frozen builds only; fork feature, English-only)
+        self._update_available: dict[str, Any] | None = None
+        self._update_running = False
+
         # Setup/settings window (single instance)
         self._setup_lock = threading.Lock()
         self._setup_open = False
@@ -165,6 +170,14 @@ class UsageMonitorForClaude:
             menu=pystray.Menu(
                 pystray.MenuItem(T['menu_show'], self.on_show_popup, default=True),
                 pystray.MenuItem(T['settings_menu'], self.on_open_setup),
+                pystray.MenuItem(
+                    lambda item: (
+                        f"Install update {self._update_available['version']}"
+                        if self._update_available else 'Check for updates'
+                    ),
+                    self.on_update_click,
+                    visible=getattr(sys, 'frozen', False),
+                ),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     T['autostart'], self.on_toggle_autostart,
@@ -222,6 +235,39 @@ class UsageMonitorForClaude:
 
     def on_open_setup(self, icon: Any = None, item: Any = None) -> None:
         self._open_setup('settings')
+
+    def on_update_click(self, icon: Any = None, item: Any = None) -> None:
+        if self._update_running:
+            return
+        threading.Thread(target=self._run_update, daemon=True).start()
+
+    def _run_update(self) -> None:
+        """Manual check on first click; verified install when one is known."""
+        self._update_running = True
+        try:
+            if self._update_available is None:
+                release = updater.check_for_update()
+                if release is None:
+                    self.icon.notify(f'You are on the latest version (fork v{updater.FORK_VERSION}).', 'Updates')
+                    return
+                self._on_update_available(release)
+                return
+
+            self.icon.notify(f"Downloading and verifying {self._update_available['version']}...", 'Updates')
+            error = updater.download_and_apply(self._update_available)
+            if error:
+                self.icon.notify(f'Update failed: {error}', 'Updates')
+            else:
+                self.on_restart()
+        finally:
+            self._update_running = False
+
+    def _on_update_available(self, release: dict[str, Any]) -> None:
+        self._update_available = release
+        self.icon.notify(
+            f"Version {release['version']} is available - open the tray menu and click Install update.",
+            'Updates',
+        )
 
     def _open_setup(self, mode: str) -> None:
         with self._setup_lock:
@@ -1080,6 +1126,12 @@ class UsageMonitorForClaude:
             icon.visible = True
             if getattr(sys, 'frozen', False):
                 sync_autostart_path()
+                updater.cleanup_old_exe()
+                threading.Thread(
+                    target=updater.watch_updates,
+                    args=(lambda: self.running, self._on_update_available),
+                    daemon=True,
+                ).start()
             if not api_headers():
                 icon.notify(f"{T['warn_no_token']}\n{T['warn_login']}", T['popup_title'])
             threading.Thread(target=watch_theme_change, args=(self._on_theme_changed,), daemon=True).start()

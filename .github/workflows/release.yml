@@ -29,6 +29,11 @@ jobs:
       - name: Install pinned dependencies
         run: pip install -r requirements-lock.txt
 
+      - name: Tag must match FORK_VERSION (updater version guard)
+        shell: pwsh
+        run: |
+          python -c "from usage_monitor_for_claude.updater import FORK_VERSION; import sys; tag = '${{ github.ref_name }}'; sys.exit(0 if tag == f'fork-v{FORK_VERSION}' else print(f'tag {tag} != fork-v{FORK_VERSION}') or 1)"
+
       - name: Run test suite
         run: python -m pytest tests -q
 

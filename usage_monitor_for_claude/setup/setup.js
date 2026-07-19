@@ -9,6 +9,11 @@ function showStep(id) {
     }
 }
 
+// True from "start sign-in" until success/cancel. While set, renderAccounts
+// must not touch the flow's UI - the 5s status poll was closing the
+// paste-code field mid-flow.
+let oauthInProgress = false;
+
 function renderAccounts(accounts) {
     for (const [key, el] of [['claude', $('accClaude')], ['codex', $('accCodex')]]) {
         const ok = !!accounts[key];
@@ -20,7 +25,8 @@ function renderAccounts(accounts) {
     $('accClaude').querySelector('.acc-status').textContent =
         accounts.claude ? (appLogin ? 'signed in (app login)' : 'signed in') : 'not signed in';
     $('signOutRow').classList.toggle('app-login', appLogin);
-    if (accounts.claude) $('oauthCodeRow').classList.remove('visible');
+    $('claudeAltLogin').style.display =
+        (accounts.claude && !appLogin && !oauthInProgress) ? '' : 'none';
 }
 
 function collectSettings() {
@@ -163,33 +169,48 @@ async function init() {
     }
     $('recheckBtn').addEventListener('click', recheck);
 
-    // App login (OAuth) for claude.ai users without the CLI.
+    // App login (OAuth) for claude.ai users without the CLI. One explicit
+    // state machine: start -> code row visible until Confirm succeeds or
+    // Cancel - the periodic recheck never touches it.
     async function startAppLogin() {
-        $('oauthError').textContent = '';
+        if (oauthInProgress) return;
+        oauthInProgress = true;
+        $('claudeAltLogin').style.display = 'none';
+        const err = $('oauthError');
+        err.textContent = '';
+        err.classList.remove('visible');
         const started = await pywebview.api.claude_login_start().catch(() => false);
         if (started) {
             $('oauthCodeRow').classList.add('visible');
             $('oauthCode').focus();
         } else {
-            $('oauthError').textContent = 'Could not open the browser.';
-            $('oauthError').classList.add('visible');
+            oauthInProgress = false;
+            err.textContent = 'Could not open the browser.';
+            err.classList.add('visible');
+            recheck();
         }
     }
+
+    function endAppLogin() {
+        oauthInProgress = false;
+        $('oauthCodeRow').classList.remove('visible');
+        $('oauthCode').value = '';
+        $('oauthError').classList.remove('visible');
+        recheck();
+    }
+
     $('claudeOauthBtn').addEventListener('click', startAppLogin);
-    $('claudeAltLogin').addEventListener('click', () => {
-        // Reveal the sign-in flow on an already-signed-in (CLI) card.
-        $('accClaude').querySelectorAll('.acc-actions').forEach((el) => el.classList.add('revealed'));
-        startAppLogin();
-    });
+    $('claudeAltLogin').addEventListener('click', startAppLogin);
+    $('oauthCancel').addEventListener('click', endAppLogin);
     $('oauthConfirm').addEventListener('click', async () => {
         const result = await pywebview.api.claude_login_finish($('oauthCode').value)
             .catch(() => ({ ok: false, error: 'bridge error' }));
-        const err = $('oauthError');
-        err.classList.toggle('visible', !result.ok);
-        err.textContent = result.ok ? '' : (result.error || 'sign-in failed');
         if (result.ok) {
-            $('oauthCode').value = '';
-            recheck();
+            endAppLogin();
+        } else {
+            const err = $('oauthError');
+            err.classList.add('visible');
+            err.textContent = result.error || 'sign-in failed';
         }
     });
     $('claudeSignOutBtn').addEventListener('click', async () => {

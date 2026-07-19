@@ -44,7 +44,13 @@ stored, or transmitted.
 | `claude.ai/oauth/authorize` (system browser), `console.anthropic.com/v1/oauth/token` | optional app login + its token refresh |
 | `chatgpt.com/backend-api/codex/usage` (fallback `/backend-api/wham/usage`) | Codex usage |
 | `auth.openai.com/oauth/token` | Codex token refresh (only after a 401) |
-| `github.com` (release page, opened in the system browser) | manual update check via the tray menu |
+| `api.github.com/repos/.../releases/latest` + the release asset URLs | in-app update check (every 6h) and user-initiated update download |
+
+**In-app updates:** the tray menu's update action downloads the newest
+release EXE and installs it **only after its SHA256 matches the release's
+`SHA256SUMS.txt`** - both artifacts come from the public CI workflow, so a
+tampered download can never be installed. Nothing installs without you
+clicking the menu item.
 
 There is no telemetry, no analytics, no crash reporting, and no other
 network traffic. Tokens are sent only as `Authorization` headers to the

@@ -105,7 +105,8 @@ p { font-size: 12.5px; line-height: 1.55; }
 /* Signed in via app login: hide the sign-in helpers, show sign-out. */
 .account.ok #signOutRow.app-login { display: flex; }
 
-/* CLI-signed-in users can still reach the app login (e.g. to test it). */
+/* CLI-signed-in users can still reach the app login (e.g. to test it).
+   Visibility of the link is JS-owned (flow state machine). */
 button.link {
     all: unset;
     font-size: 10.5px;
@@ -115,10 +116,8 @@ button.link {
     display: none;
 }
 button.link:hover { color: var(--ink-dim); }
-.account.ok #claudeAltLogin { display: inline; }
-.account.ok #signOutRow.app-login ~ #claudeAltLogin { display: none; }
-/* Once revealed, the sign-in row + code flow work even on an ok card. */
-.account.ok .acc-actions.revealed, .account.ok .oauth-code.visible { display: flex; }
+/* The paste-code flow works even on an already-signed-in (CLI) card. */
+.account.ok .oauth-code.visible { display: flex; }
 
 /* Fields */
 
