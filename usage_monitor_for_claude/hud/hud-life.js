@@ -318,64 +318,207 @@ const hudLife = (() => {
     // Visitors
     // ---------------------------------------------------------------------
 
-    function visitorElement() {
-        // Pool: user PNGs (data URIs) > bundled CC0 pack (DCSS tiles) >
-        // the hand-drawn grid critters as a fallback garnish.
-        const custom = (lastData && lastData.visitors) || [];
-        const pack = (lastData && lastData.visitors_pack) || [];
-        const roll = Math.random();
-        if (custom.length && roll < 0.4) {
-            const img = document.createElement('img');
-            img.src = custom[Math.floor(Math.random() * custom.length)];
-            img.style.height = '22px';
-            return img;
-        }
-        if (pack.length && roll < 0.85) {
-            const img = document.createElement('img');
-            img.src = pack[Math.floor(Math.random() * pack.length)];
-            img.style.height = '24px';
-            return img;
-        }
-        const critter = VISITORS[Math.floor(Math.random() * VISITORS.length)];
+    function gridElement(critter) {
         const el = document.createElement('div');
+        const px = critter.px || 3;
         const inner = document.createElement('div');
-        inner.style.width = `${critter.px}px`;
-        inner.style.height = `${critter.px}px`;
-        inner.style.boxShadow = critter.map.map((row, y) =>
+        inner.style.width = `${px}px`;
+        inner.style.height = `${px}px`;
+        inner.style.boxShadow = critter.rows.map((row, y) =>
             [...row].map((ch, x) => critter.palette[ch]
-                ? `${x * critter.px}px ${y * critter.px}px 0 0 ${critter.palette[ch]}` : null)
+                ? `${x * px}px ${y * px}px 0 0 ${critter.palette[ch]}` : null)
                 .filter(Boolean).join(','))
             .filter(Boolean).join(',');
-        el.style.width = `${critter.map[0].length * critter.px}px`;
-        el.style.height = `${critter.map.length * critter.px}px`;
+        el.style.width = `${critter.rows[0].length * px}px`;
+        el.style.height = `${critter.rows.length * px}px`;
         el.appendChild(inner);
         return el;
     }
 
+    // True for critters that hover instead of obeying gravity.
+    const FLOATY = /bat|butterfly|jelly|eyeball|orb|ghost/;
+
+    function pickVisitor() {
+        const custom = (lastData && lastData.visitors) || [];
+        const grids = (lastData && lastData.visitor_grids) || [];
+        const pack = (lastData && lastData.visitors_pack) || [];
+        const roll = Math.random();
+        if ((custom.length || grids.length) && roll < 0.45) {
+            const pool = [
+                ...custom.map((src) => ({ kind: 'img', src, floats: false })),
+                ...grids.map((g) => ({ kind: 'grid', grid: g, floats: FLOATY.test(g.name || '') })),
+            ];
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+        if (pack.length && roll < 0.9) {
+            const src = pack[Math.floor(Math.random() * pack.length)];
+            return { kind: 'img', src, floats: FLOATY.test(src) };
+        }
+        const critter = VISITORS[Math.floor(Math.random() * VISITORS.length)];
+        return { kind: 'grid', grid: { px: critter.px, palette: critter.palette, rows: critter.map }, floats: critter.name === 'ghost' };
+    }
+
+    // -- Platform physics: real element rects become walkable surfaces --
+
+    function collectPlatforms(layer) {
+        const base = layer.getBoundingClientRect();
+        const platforms = [];
+        const add = (rect, inset = 2) => {
+            if (rect.width < 30) return;
+            platforms.push({
+                left: rect.left - base.left + inset,
+                right: rect.right - base.left - inset,
+                y: rect.top - base.top,
+            });
+        };
+        // Deliberately NOT the header: landing there leaves the critter
+        // clipped behind the rim - dropping through the header zone onto
+        // the provider rows reads as "popping in over the top".
+        for (const el of document.querySelectorAll('.row-bar, .provider-head, .ctx.visible')) {
+            add(el.getBoundingClientRect());
+        }
+        // The floor: bottom of the card.
+        platforms.push({ left: 4, right: base.width - 4, y: base.height - 4 });
+        return platforms.sort((a, b) => a.y - b.y);
+    }
+
+    function platformBelow(platforms, x, y) {
+        let best = null;
+        for (const p of platforms) {
+            if (p.y > y + 1 && x >= p.left - 4 && x <= p.right + 4) {
+                if (!best || p.y < best.y) best = p;
+            }
+        }
+        return best;
+    }
+
     function spawnVisitor() {
         const layer = document.getElementById('visitorLayer');
-        if (!layer) return;
+        if (!layer || layer.clientWidth < 100) return;
         visitorBusy = true;
 
-        const el = visitorElement();
-        el.classList.add('visitor');
-        const fromLeft = Math.random() < 0.5;
-        const travel = layer.clientWidth + 60;
-        const duration = 9000 + Math.random() * 5000;
-        el.style.left = fromLeft ? '-40px' : `${layer.clientWidth + 10}px`;
-        el.style.transition = `transform ${duration}ms linear`;
+        const pick = pickVisitor();
+        const content = pick.kind === 'img'
+            ? Object.assign(document.createElement('img'), { src: pick.src })
+            : gridElement(pick.grid);
+        if (pick.kind === 'img') content.style.height = '24px';
+        const el = document.createElement('div');
+        el.className = 'visitor';
+        el.appendChild(content);
         layer.appendChild(el);
 
-        // Sprites notice the passer-by.
-        eyeDir = fromLeft ? -1 : 1;
-        clawdResting();
-        if (Math.random() < 0.4) bubble(els.claudeSprite.parentElement, 'visitor');
-        setTimeout(() => { eyeDir = 0; clawdResting(); }, 2600);
+        const w = 24, h = 24;
+        let x = 30 + Math.random() * (layer.clientWidth - 90);
+        let y = -h - 4;            // starts hidden above the rim
+        let vx = (Math.random() < 0.5 ? 1 : -1) * (10 + Math.random() * 12);
+        let vy = 0;
+        let mode = 'drop';         // drop | walk | pause | leave
+        let modeUntil = 0;
+        let platforms = collectPlatforms(layer);
+        const leaveAt = Date.now() + 15000 + Math.random() * 20000;
+        let lastT = performance.now();
+        let lastNotice = 0;
 
-        requestAnimationFrame(() => {
-            el.style.transform = `translateX(${fromLeft ? travel : -travel}px)`;
-        });
-        setTimeout(() => { el.remove(); visitorBusy = false; }, duration + 200);
+        function render() {
+            el.style.transform = `translate(${x - w / 2}px, ${y}px) scaleX(${vx < 0 ? -1 : 1})`;
+        }
+
+        function residentsNotice() {
+            const now = Date.now();
+            if (now - lastNotice < 1500) return;
+            lastNotice = now;
+            const rect = els.claudeSprite.parentElement.getBoundingClientRect();
+            const base = layer.getBoundingClientRect();
+            eyeDir = x < (rect.left - base.left) ? -1 : 1;
+            clawdResting();
+        }
+
+        function step(t) {
+            const dt = Math.min((t - lastT) / 1000, 0.05);
+            lastT = t;
+            const floor = platformBelow(platforms, x, y + h - 2);
+
+            if (pick.floats) {
+                // Floaters drift on a sine path between the furniture.
+                y += Math.sin(t / 500) * 0.3 + (mode === 'leave' ? -30 * dt : 8 * dt * (y < 40 ? 1 : 0.15));
+                x += vx * dt;
+                if (x < 16 || x > layer.clientWidth - 16) vx = -vx;
+            } else if (mode === 'drop') {
+                vy += 260 * dt; // gravity
+                y += vy * dt;
+                const target = floor ? floor.y - h : layer.clientHeight;
+                if (y >= target) {
+                    y = target;
+                    vy = 0;
+                    mode = 'walk';
+                    content.classList.add('land-squash');
+                    setTimeout(() => content.classList.remove('land-squash'), 240);
+                }
+            } else if (mode === 'walk') {
+                x += vx * dt;
+                const on = platforms.find((p) => Math.abs(p.y - h - y) < 3 && x >= p.left - 6 && x <= p.right + 6);
+                if (!on) {
+                    mode = 'drop'; // walked off an edge - fall to the next thing
+                    platforms = collectPlatforms(layer);
+                } else if (x <= on.left || x >= on.right) {
+                    // Edge of the furniture: peer over it, then turn or hop off.
+                    // Hopping off the FLOOR means leaving - only near the end
+                    // of the visit; furniture edges just drop to the next shelf.
+                    const isFloor = on.y >= layer.clientHeight - 8;
+                    const mayExit = Date.now() > leaveAt - 6000;
+                    if ((!isFloor || mayExit) && Math.random() < 0.4) {
+                        mode = 'drop';
+                    } else {
+                        vx = -vx;
+                        mode = 'pause';
+                        modeUntil = t + 700 + Math.random() * 1800;
+                        if (Math.random() < 0.12) floatBubble(layer, x, y, '?');
+                    }
+                } else if (Math.random() < dt * 0.25) {
+                    mode = 'pause'; // stops to sniff at the pixels
+                    modeUntil = t + 600 + Math.random() * 1600;
+                }
+            } else if (mode === 'pause') {
+                if (t >= modeUntil) mode = 'walk';
+            }
+
+            if (mode !== 'leave' && Date.now() > leaveAt) {
+                mode = 'leave';
+                if (!pick.floats) vy = -90; // little hop before falling off
+            }
+            if (mode === 'leave' && !pick.floats) {
+                vy += 300 * dt;
+                y += vy * dt;
+                x += vx * dt;
+            }
+
+            residentsNotice();
+            render();
+
+            const gone = pick.floats ? (mode === 'leave' && y < -h - 6) : y > layer.clientHeight + 8;
+            if (gone || !document.body.contains(el)) {
+                el.remove();
+                visitorBusy = false;
+                eyeDir = 0;
+                clawdResting();
+                return;
+            }
+            requestAnimationFrame(step);
+        }
+
+        if (Math.random() < 0.35) bubble(els.claudeSprite.parentElement, 'visitor');
+        render();
+        requestAnimationFrame(step);
+    }
+
+    function floatBubble(layer, x, y, text) {
+        const b = document.createElement('div');
+        b.className = 'float-bubble';
+        b.textContent = text;
+        b.style.left = `${x + 8}px`;
+        b.style.top = `${y - 14}px`;
+        layer.appendChild(b);
+        setTimeout(() => b.remove(), 1800);
     }
 
     // ---------------------------------------------------------------------
@@ -387,6 +530,13 @@ const hudLife = (() => {
             if (started) return;
             started = true;
             setInterval(idleTick, 2600);
+
+            // Easter egg (and demo hook): double-click the tagline to
+            // summon a visitor immediately.
+            els.tagline.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (!visitorBusy) spawnVisitor();
+            });
 
             for (const key of ['claude', 'codex']) {
                 const box = els[`${key}Sprite`].parentElement;

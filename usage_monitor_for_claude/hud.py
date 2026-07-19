@@ -140,6 +140,30 @@ def clamp_position(pos: tuple[int, int], size: tuple[int, int], work: tuple[int,
 
 _visitor_cache: list[str] | None = None
 _visitor_pack_cache: list[str] | None = None
+_visitor_grid_cache: list[dict[str, Any]] | None = None
+
+
+def _visitor_grids() -> list[dict[str, Any]]:
+    """User-built sprite grids (Sprite Builder JSON files) for the roamer."""
+    global _visitor_grid_cache
+    if _visitor_grid_cache is not None:
+        return _visitor_grid_cache
+
+    from .sprite_builder import VISITORS_DIR, validate_grid
+    grids: list[dict[str, Any]] = []
+    try:
+        for path in sorted(VISITORS_DIR.glob('*.json'))[:12]:
+            try:
+                grid = validate_grid(json.loads(path.read_text(encoding='utf-8')))
+            except (OSError, ValueError):
+                continue
+            if grid is not None:
+                grid['px'] = 3
+                grids.append(grid)
+    except OSError:
+        pass
+    _visitor_grid_cache = grids
+    return grids
 
 
 def _visitor_pack() -> list[str]:
@@ -286,6 +310,7 @@ class UsageHud:
             'pin_mode': self._pin_mode,
             'visitors': _visitor_data_uris(),
             'visitors_pack': _visitor_pack(),
+            'visitor_grids': _visitor_grids(),
         }
 
     # Window

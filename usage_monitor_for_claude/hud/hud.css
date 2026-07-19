@@ -238,18 +238,37 @@ header {
     100% { opacity: 0; transform: translate(var(--cx), 34px) rotate(220deg); }
 }
 
-/* Visitor critters wander along the card bottom */
+/* Visitor critters roam the whole card like a climbing frame: they drop in
+   over the top rim, walk along the bars, and investigate the furniture. */
 #visitorLayer {
     position: absolute;
-    left: 0; right: 0; bottom: 2px;
-    height: 30px;
+    inset: 0;
     pointer-events: none;
     overflow: hidden;
+    z-index: 4;
 }
 .visitor {
     position: absolute;
-    bottom: 0;
+    left: 0; top: 0;
     image-rendering: pixelated;
+    will-change: transform;
+}
+.visitor > .land-squash { animation: land-squash 220ms ease-out; }
+@keyframes land-squash {
+    0% { transform: scaleY(0.72) scaleX(1.2); }
+    100% { transform: scaleY(1) scaleX(1); }
+}
+.float-bubble {
+    position: absolute;
+    background: var(--ink);
+    color: #1A1410;
+    font-size: 9px;
+    font-family: var(--mono);
+    padding: 2px 5px;
+    border-radius: 6px 6px 6px 2px;
+    pointer-events: none;
+    z-index: 5;
+    animation: bubble-in 180ms cubic-bezier(0.3, 1.5, 0.6, 1);
 }
 
 .sprite {

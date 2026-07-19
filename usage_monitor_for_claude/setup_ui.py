@@ -130,6 +130,16 @@ class _SetupApi:
         claude_oauth.sign_out()
         return self.recheck()
 
+    # Sprite Builder - your Claude subscription draws a visitor
+
+    def build_sprite(self, prompt: str) -> dict[str, Any]:
+        from .sprite_builder import generate_sprite
+        return generate_sprite(str(prompt))
+
+    def save_sprite(self, grid: dict[str, Any]) -> dict[str, Any]:
+        from .sprite_builder import save_sprite
+        return save_sprite(grid)
+
     def check_hotkey(self, spec: str) -> bool:
         return parse_hotkey(str(spec)) is not None
 

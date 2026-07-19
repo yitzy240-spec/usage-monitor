@@ -44,6 +44,7 @@ stored, or transmitted.
 | `claude.ai/oauth/authorize` (system browser), `console.anthropic.com/v1/oauth/token` | optional app login + its token refresh |
 | `chatgpt.com/backend-api/codex/usage` (fallback `/backend-api/wham/usage`) | Codex usage |
 | `auth.openai.com/oauth/token` | Codex token refresh (only after a 401) |
+| `api.anthropic.com/v1/messages` | Sprite Builder only: user-initiated, one small request per drawing, on the user's own subscription |
 | `api.github.com/repos/.../releases/latest` + the release asset URLs | in-app update check (every 6h) and user-initiated update download |
 
 **In-app updates:** the tray menu's update action downloads the newest

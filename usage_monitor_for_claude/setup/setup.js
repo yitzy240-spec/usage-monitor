@@ -153,8 +153,9 @@ async function init() {
 
     showStep(state.mode === 'onboarding' ? 'stepWelcome' : 'stepAccounts');
     if (state.mode === 'settings') {
-        // Settings mode shows accounts + prefs as one page.
+        // Settings mode shows accounts + prefs + builder as one page.
         $('stepPrefs').classList.add('active');
+        $('stepBuilder').classList.add('active');
     }
 
     // Wiring
@@ -239,6 +240,60 @@ async function init() {
     });
     $('restartBtn').addEventListener('click', () => pywebview.api.restart_app());
     $('laterBtn').addEventListener('click', () => pywebview.api.finish());
+
+    // Sprite Builder
+    let pendingGrid = null;
+    function renderGridPreview(grid) {
+        const px = 6;
+        const inner = document.createElement('div');
+        inner.style.width = `${px}px`;
+        inner.style.height = `${px}px`;
+        inner.style.boxShadow = grid.rows.map((row, y) =>
+            [...row].map((ch, x) => grid.palette[ch]
+                ? `${x * px}px ${y * px}px 0 0 ${grid.palette[ch]}` : null)
+                .filter(Boolean).join(','))
+            .filter(Boolean).join(',');
+        const frame = document.createElement('div');
+        frame.style.width = `${grid.rows[0].length * px}px`;
+        frame.style.height = `${grid.rows.length * px}px`;
+        frame.appendChild(inner);
+        $('spritePreview').replaceChildren(frame);
+    }
+    async function drawSprite() {
+        const err = $('spriteError');
+        err.classList.remove('visible');
+        $('spriteStatus').textContent = 'Claude is sketching…';
+        $('spriteGenBtn').disabled = true;
+        const result = await pywebview.api.build_sprite($('spritePrompt').value)
+            .catch(() => ({ ok: false, error: 'bridge error' }));
+        $('spriteGenBtn').disabled = false;
+        $('spriteStatus').textContent = '';
+        if (!result.ok) {
+            err.textContent = result.error || 'generation failed';
+            err.classList.add('visible');
+            return;
+        }
+        pendingGrid = result.grid;
+        $('spriteName').textContent = pendingGrid.name;
+        renderGridPreview(pendingGrid);
+        $('spritePreviewWrap').classList.add('visible');
+    }
+    $('spriteGenBtn').addEventListener('click', drawSprite);
+    $('spriteRetryBtn').addEventListener('click', drawSprite);
+    $('spriteSaveBtn').addEventListener('click', async () => {
+        if (!pendingGrid) return;
+        const result = await pywebview.api.save_sprite(pendingGrid)
+            .catch(() => ({ ok: false, error: 'bridge error' }));
+        if (result.ok) {
+            $('spriteStatus').textContent = 'Saved - it will wander by soon. Draw another?';
+            $('spritePreviewWrap').classList.remove('visible');
+            $('spritePrompt').value = '';
+            pendingGrid = null;
+        } else {
+            $('spriteError').textContent = result.error || 'could not save';
+            $('spriteError').classList.add('visible');
+        }
+    });
 
     // Poll account status while the window is open (a login can complete
     // in the terminal at any moment).

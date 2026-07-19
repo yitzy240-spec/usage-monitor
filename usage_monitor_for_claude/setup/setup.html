@@ -96,6 +96,26 @@
         <small class="dim" id="savePath"></small>
     </section>
 
+    <!-- Sprite Builder (settings mode) -->
+    <section class="step settings-only" id="stepBuilder">
+        <h1>Sprite builder</h1>
+        <p class="dim">Describe a critter and your Claude subscription draws it - it then wanders around the HUD with the other visitors. Uses one tiny request from your quota.</p>
+        <div class="oauth-code-line">
+            <input type="text" id="spritePrompt" spellcheck="false" placeholder="e.g. a grumpy toaster with legs">
+            <button class="primary" id="spriteGenBtn">Draw it</button>
+        </div>
+        <div id="spritePreviewWrap">
+            <div id="spritePreview"></div>
+            <div class="sprite-meta">
+                <span class="mono" id="spriteName"></span>
+                <button class="primary" id="spriteSaveBtn">Keep it</button>
+                <button id="spriteRetryBtn">Redraw</button>
+            </div>
+        </div>
+        <small class="error" id="spriteError"></small>
+        <small class="dim" id="spriteStatus"></small>
+    </section>
+
     <!-- Onboarding: done -->
     <section class="step" id="stepDone">
         <h1>You're set ✨</h1>

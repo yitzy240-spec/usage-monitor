@@ -178,3 +178,19 @@ button.primary:hover { filter: brightness(1.08); background: var(--orange); }
 /* Mode gating */
 body.mode-settings .wizard-only { display: none; }
 body.mode-onboarding .settings-only { display: none; }
+
+/* Sprite builder */
+#spritePreviewWrap { display: none; align-items: center; gap: 14px; }
+#spritePreviewWrap.visible { display: flex; }
+#spritePreview {
+    min-width: 96px;
+    min-height: 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 10px;
+    image-rendering: pixelated;
+}
+.sprite-meta { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
