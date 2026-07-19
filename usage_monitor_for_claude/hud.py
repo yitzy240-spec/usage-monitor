@@ -138,6 +138,39 @@ def clamp_position(pos: tuple[int, int], size: tuple[int, int], work: tuple[int,
     return x, y
 
 
+_visitor_cache: list[str] | None = None
+
+
+def _visitor_data_uris() -> list[str]:
+    """User-supplied visitor sprites as data URIs (loaded once per run).
+
+    Drop small PNGs into ``%APPDATA%/UsageMonitorForClaude/visitors/`` and
+    they join the built-in critters wandering across the HUD. Data URIs keep
+    the page's strict CSP intact (img-src data:). We deliberately bundle no
+    third-party characters - what users drop in locally is their business.
+    """
+    global _visitor_cache
+    if _visitor_cache is not None:
+        return _visitor_cache
+
+    import base64
+    import os as _os
+    folder = Path(_os.environ.get('APPDATA') or (Path.home() / 'AppData' / 'Roaming')) / 'UsageMonitorForClaude' / 'visitors'
+    uris: list[str] = []
+    try:
+        for path in sorted(folder.glob('*.png'))[:8]:
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if 0 < len(data) <= 300_000:
+                uris.append('data:image/png;base64,' + base64.b64encode(data).decode('ascii'))
+    except OSError:
+        pass
+    _visitor_cache = uris
+    return uris
+
+
 def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str, Any]:
     """Build one provider block (bars + error text) for the HUD JS."""
     from .popup import _usage_bar_list
@@ -233,6 +266,7 @@ class UsageHud:
             'codex': codex,
             'thresholds': HUD_THRESHOLDS,
             'pin_mode': self._pin_mode,
+            'visitors': _visitor_data_uris(),
         }
 
     # Window

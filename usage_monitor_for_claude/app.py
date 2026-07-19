@@ -517,7 +517,21 @@ class UsageMonitorForClaude:
             )
         self.icon.title = self._tooltip_prefix + format_tooltip(data)
 
-    def _clawd_tray_image(self, data: dict[str, Any]) -> Any:
+    def _tray_blink_loop(self) -> None:
+        """Blink the tray Clawd every so often - even the taskbar is alive."""
+        import random
+        while self.running:
+            time.sleep(20 + random.random() * 25)
+            if TRAY_STYLE != 'clawd' or not self._last_response or 'error' in self._last_response:
+                continue
+            try:
+                self.icon.icon = self._clawd_tray_image(self._last_response, blink=True)
+                time.sleep(0.15)
+                self._render_tray()
+            except Exception:
+                pass
+
+    def _clawd_tray_image(self, data: dict[str, Any], blink: bool = False) -> Any:
         """Build the Clawd tray icon from both providers' current usage."""
         def quota_pcts(source: dict[str, Any]) -> list[float]:
             return [

@@ -70,6 +70,38 @@ class TestClampPosition(unittest.TestCase):
         self.assertEqual(clamp_position((5, 5), (100, 100), (-1920, 0, 0, 1080)), (-100, 5))
 
 
+class TestVisitorDataUris(unittest.TestCase):
+    """Tests for the user visitors folder loader."""
+
+    def test_loads_small_pngs_as_data_uris(self):
+        import usage_monitor_for_claude.hud as hud_mod
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'UsageMonitorForClaude' / 'visitors'
+            folder.mkdir(parents=True)
+            (folder / 'pet.png').write_bytes(b'\x89PNG\r\n\x1a\nfakedata')
+            (folder / 'huge.png').write_bytes(b'x' * 400_000)  # over the cap
+            (folder / 'notes.txt').write_text('ignored')
+            hud_mod._visitor_cache = None
+            with patch.dict('os.environ', {'APPDATA': tmp}):
+                uris = hud_mod._visitor_data_uris()
+            hud_mod._visitor_cache = None
+        self.assertEqual(len(uris), 1)
+        self.assertTrue(uris[0].startswith('data:image/png;base64,'))
+
+    def test_missing_folder_is_empty(self):
+        import usage_monitor_for_claude.hud as hud_mod
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp:
+            hud_mod._visitor_cache = None
+            with patch.dict('os.environ', {'APPDATA': tmp}):
+                self.assertEqual(hud_mod._visitor_data_uris(), [])
+            hud_mod._visitor_cache = None
+
+
 class TestProviderPayload(unittest.TestCase):
     """Tests for _provider_payload()."""
 

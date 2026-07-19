@@ -43,16 +43,11 @@ function mapToShadow(map, palette) {
     return shadows.join(',');
 }
 
-function startBlink() {
-    if (blinkTimer) clearInterval(blinkTimer);
-    blinkTimer = setInterval(() => {
-        els.claudeSprite.style.boxShadow = mapToShadow(blinkFrame(CLAWD), SPRITES.claude.palette);
-        els.codexSprite.src = 'codex-pet-1.png';
-        setTimeout(() => {
-            els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
-            els.codexSprite.src = 'codex-pet-0.png';
-        }, 140);
-    }, 3200);
+// Base poses; hud-life.js layers all liveliness (blinks, walks, moods,
+// reactions) on top of these.
+function renderBaseSprites() {
+    els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
+    els.codexSprite.style.backgroundPosition = '0 0';
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +220,7 @@ function renderContext(container, sessions, thresholds, brand) {
 }
 
 function updateData(data) {
+    const prev = lastData;
     lastData = data;
     const thresholds = data.thresholds || [70, 90];
 
@@ -232,6 +228,7 @@ function updateData(data) {
     renderProvider('Codex', data.codex, thresholds, 'var(--codex)');
 
     setPinMode(!!data.pin_mode);
+    if (window.hudLife) hudLife.onData(data, prev);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +279,7 @@ function hudShown() {
     requestAnimationFrame(() => requestAnimationFrame(() => {
         fills.forEach((fill) => { fill.style.width = fill.dataset.target; });
     }));
+    if (window.hudLife) hudLife.onShown();
 }
 
 function setPinMode(pinned) {
@@ -365,24 +363,30 @@ function init(config) {
         pywebview.api.begin_drag().then((started) => { dragging = !!started; }).catch(() => {});
     });
     document.addEventListener('mousemove', (e) => {
-        if (!dragging && !resizing) return;
+        if (!dragging && !resizing) {
+            if (window.hudLife) hudLife.onCursor(e);
+            return;
+        }
         if (e.buttons === 0) {
             if (dragging) pywebview.api.end_drag();
             if (resizing) pywebview.api.end_resize();
             dragging = resizing = false;
+            if (window.hudLife) hudLife.onDragEnd();
             return;
         }
+        if (dragging && window.hudLife) hudLife.onDragMove(e.movementX);
         (resizing ? pywebview.api.resize_drag() : pywebview.api.drag()).catch(() => {});
     });
     document.addEventListener('mouseup', () => {
         if (dragging) pywebview.api.end_drag();
         if (resizing) pywebview.api.end_resize();
         dragging = resizing = false;
+        if (window.hudLife) hudLife.onDragEnd();
     });
 
-    els.claudeSprite.style.boxShadow = mapToShadow(CLAWD, SPRITES.claude.palette);
-    startBlink();
+    renderBaseSprites();
     updateData(config.data);
+    if (window.hudLife) hudLife.init();
 
     // Content-driven window height: #card.scrollHeight is the needed height
     // (body is pinned to 100%, so its own scrollHeight never grows).

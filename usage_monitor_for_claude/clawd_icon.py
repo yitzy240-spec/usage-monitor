@@ -49,16 +49,18 @@ def _body_color(worst_pct: float) -> tuple[int, int, int, int]:
 
 def create_clawd_icon(
     worst_pct: float, claude_pct: float, codex_pct: float | None, light_taskbar: bool = False,
+    blink: bool = False,
 ) -> Image.Image:
     """Render the Clawd tray icon with severity tint and mini fill bars."""
     img = Image.new('RGBA', (_SIZE, _SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     body = _body_color(worst_pct)
+    art = [row.replace('O', '#') for row in _ART] if blink else _ART
     cell = 5
     ox = (_SIZE - len(_ART[0]) * cell) // 2
     oy = 1
-    for j, row in enumerate(_ART):
+    for j, row in enumerate(art):
         for i, ch in enumerate(row):
             color = body if ch == '#' else _EYE if ch == 'O' else None
             if color:
