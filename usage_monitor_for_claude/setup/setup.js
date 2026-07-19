@@ -164,7 +164,7 @@ async function init() {
     $('recheckBtn').addEventListener('click', recheck);
 
     // App login (OAuth) for claude.ai users without the CLI.
-    $('claudeOauthBtn').addEventListener('click', async () => {
+    async function startAppLogin() {
         $('oauthError').textContent = '';
         const started = await pywebview.api.claude_login_start().catch(() => false);
         if (started) {
@@ -174,6 +174,12 @@ async function init() {
             $('oauthError').textContent = 'Could not open the browser.';
             $('oauthError').classList.add('visible');
         }
+    }
+    $('claudeOauthBtn').addEventListener('click', startAppLogin);
+    $('claudeAltLogin').addEventListener('click', () => {
+        // Reveal the sign-in flow on an already-signed-in (CLI) card.
+        $('accClaude').querySelectorAll('.acc-actions').forEach((el) => el.classList.add('revealed'));
+        startAppLogin();
     });
     $('oauthConfirm').addEventListener('click', async () => {
         const result = await pywebview.api.claude_login_finish($('oauthCode').value)
