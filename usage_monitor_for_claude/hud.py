@@ -284,16 +284,42 @@ class UsageHud:
             'data': self.payload(),
         }
 
-    def _position(self) -> None:
-        """Place the HUD: custom (dragged) spot, else bottom-right above the tray."""
-        tray = ctypes.windll.user32.FindWindowW('Shell_TrayWnd', None)
-        hmon = ctypes.windll.user32.MonitorFromWindow(tray, 2)  # MONITOR_DEFAULTTONEAREST
+    def _monitor_metrics(self, hmon: int) -> tuple[Any, int]:
+        """Return (work rect, effective DPI) for a monitor handle.
+
+        Sizing must follow the monitor the HUD actually occupies - mixed-DPI
+        setups (200% laptop + 100% external) otherwise render the window at
+        double or half its intended size after a drag.
+        """
         info = _MONITORINFO()
         info.cbSize = ctypes.sizeof(_MONITORINFO)
         ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(info))
-        work = info.rcWork
 
-        dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or ctypes.windll.user32.GetDpiForSystem()
+        dpi_x = ctypes.c_uint(0)
+        dpi_y = ctypes.c_uint(0)
+        try:
+            ctypes.windll.shcore.GetDpiForMonitor(hmon, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))  # MDT_EFFECTIVE_DPI
+            dpi = dpi_x.value
+        except Exception:
+            dpi = 0
+        if not dpi:
+            dpi = ctypes.windll.user32.GetDpiForWindow(self._hwnd) or ctypes.windll.user32.GetDpiForSystem() or _BASELINE_DPI
+        return info.rcWork, dpi
+
+    def _position(self) -> None:
+        """Place the HUD: custom (dragged) spot, else bottom-right above the tray.
+
+        Work area and DPI come from the monitor the HUD is going to sit on,
+        not the taskbar's.
+        """
+        if self._custom_pos is not None:
+            point = ctypes.wintypes.POINT(self._custom_pos[0] + 10, self._custom_pos[1] + 10)
+            hmon = ctypes.windll.user32.MonitorFromPoint(point, 2)  # MONITOR_DEFAULTTONEAREST
+        else:
+            tray = ctypes.windll.user32.FindWindowW('Shell_TrayWnd', None)
+            hmon = ctypes.windll.user32.MonitorFromWindow(tray, 2)
+        work, dpi = self._monitor_metrics(hmon)
+
         scale = dpi / _BASELINE_DPI
         width = int(self.WIDTH * scale)
         height = int(self._height * scale)
@@ -422,6 +448,10 @@ class UsageHud:
         rect = ctypes.wintypes.RECT()
         ctypes.windll.user32.GetWindowRect(self._hwnd, ctypes.byref(rect))
         self._custom_pos = (rect.left, rect.top)
+        # Re-assert size/position against the drop monitor: a cross-monitor
+        # drag changes the effective DPI, and the mid-drag auto-rescale can
+        # leave the window at the wrong physical size.
+        self._position()
         self._persist_position()
 
     def _persist_position(self) -> None:
