@@ -229,6 +229,7 @@ SITEMAP = b'''<?xml version="1.0"?><urlset>
 <url><loc>https://petdex.dev/es/pets/boba</loc></url>
 <url><loc>https://petdex.dev/pets/broom-witch</loc></url>
 <url><loc>https://petdex.dev/collections/dog-squad</loc></url>
+<url><loc>https://petdex.dev/collections/category-calm-cat</loc></url>
 </urlset>'''
 
 
@@ -252,6 +253,42 @@ class TestBrowseIndex(PetsDirsMixin):
         with patch.object(pets.requests, 'get', side_effect=requests.ConnectionError()):
             with self.assertRaises(pets.PetError):
                 pets.browse_pets(force=True)
+
+    def test_packs_parsed_without_category_noise(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=SITEMAP)):
+            packs = pets.browse_packs(force=True)
+        self.assertEqual(packs, [{'slug': 'dog-squad', 'name': 'Dog Squad'}])
+
+    def test_legacy_list_cache_treated_as_stale(self):
+        pets.PETS_DIR.mkdir(parents=True, exist_ok=True)
+        (pets.PETS_DIR / pets._INDEX_FILE).write_text('[{"slug": "old", "name": "Old"}]')
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=SITEMAP)) as get:
+            index = pets.browse_pets()
+        self.assertEqual(get.call_count, 1)  # refetched despite fresh mtime
+        self.assertEqual([p['slug'] for p in index], ['boba', 'broom-witch'])
+
+    def test_pack_fetch_augments_pet_index(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=SITEMAP)):
+            pets.browse_pets(force=True)
+        page = b'<a href="/pets/milo">x</a> <a href="/pets/boba">x</a>'
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(body=page)):
+            pets.pack_pets('dog-squad')
+        index = pets.browse_pets()  # served from the augmented disk cache
+        self.assertIn('milo', [p['slug'] for p in index])
+
+
+class TestRateLimit(PetsDirsMixin):
+    def test_persistent_429_is_a_clear_pet_error(self):
+        with patch.object(pets.requests, 'get', return_value=FakeResponse(status=429)), \
+             patch.object(pets, 'PETDEX_API', pets.PETDEX_API), patch('time.sleep'):
+            with self.assertRaises(pets.PetError) as ctx:
+                pets.install_pet('boba')
+        self.assertIn('rate-limiting', str(ctx.exception))
+
+    def test_rate_limited_json_body_detected(self):
+        resp = FakeResponse(status=200, payload={'error': 'rate_limited'})
+        self.assertTrue(pets._rate_limited(resp))
+        self.assertFalse(pets._rate_limited(FakeResponse(status=200, payload={'ok': True})))
 
 
 class TestPetPreview(PetsDirsMixin):

@@ -257,3 +257,30 @@ body.mode-onboarding .settings-only { display: none; }
 .pet-card-owned { font-size: 11px; color: var(--ok); }
 .pack-choice b { font-weight: 600; }
 #packChoices { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---- Collections browser ---- */
+#packsPanel { display: none; flex-direction: column; gap: 10px; }
+#packsPanel.open { display: flex; }
+#packsToggle { display: inline-block; align-self: flex-start; font-size: 11.5px; }
+.pack-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding: 2px;
+}
+.pack-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    background: var(--field-bg);
+    border-radius: 12px;
+}
+.pack-strip { display: flex; gap: 4px; min-width: 150px; min-height: 37px; align-items: center; }
+.pack-strip .pet-card-pocket { width: 30px; }
+.pack-label { display: flex; flex-direction: column; gap: 2px; flex: 1; font-size: 12px; }
+.pack-count { font-size: 10.5px; }
+.gallery-hint { grid-column: 1 / -1; font-size: 11.5px; line-height: 1.5; }

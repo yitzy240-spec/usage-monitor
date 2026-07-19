@@ -394,23 +394,36 @@ async function init() {
     }
 
     // Install every pet of a collection, narrating progress into `status`.
+    // Paced politely; petdex rate-limits bursts of installs, so already-
+    // installed pets are skipped and a limit stops the run honestly
+    // instead of burning through the rest as failures.
     async function adoptPack(pack, status, setBusy) {
         setBusy(true);
-        status.textContent = `Loading ${pack.name || pack.slug}…`;
+        const name = pack.name || pack.slug;
+        status.textContent = `Loading ${name}…`;
         const listed = await pywebview.api.pack_pets(pack.slug).catch(() => ({ error: 'bridge error' }));
         if (listed.error) {
             status.textContent = listed.error;
             setBusy(false);
             return 0;
         }
-        let ok = 0;
-        for (let i = 0; i < listed.pets.length; i++) {
-            const slug = listed.pets[i];
-            status.textContent = `${pack.name || pack.slug}: adopting ${slug} (${i + 1}/${listed.pets.length})…`;
-            const r = await adoptOne(slug);
-            if (!r.error) ok++;
+        const todo = listed.pets.filter((s) => !installedSlugs.has(s));
+        if (!todo.length) {
+            status.textContent = `${name}: all ${listed.pets.length} pets already adopted.`;
+            setBusy(false);
+            return 0;
         }
-        status.textContent = `${pack.name || pack.slug}: ${ok} of ${listed.pets.length} pets adopted.`;
+        let ok = 0, limited = false;
+        for (let i = 0; i < todo.length; i++) {
+            status.textContent = `${name}: adopting ${todo[i]} (${i + 1}/${todo.length})…`;
+            const r = await adoptOne(todo[i]);
+            if (!r.error) ok++;
+            else if (/rate.?limit/i.test(r.error)) { limited = true; break; }
+            await new Promise((res) => setTimeout(res, 350));
+        }
+        status.textContent = limited
+            ? `${name}: petdex is rate-limiting - ${ok} adopted; press Install again in a minute for the rest.`
+            : `${name}: ${ok} of ${todo.length} pets adopted.`;
         setBusy(false);
         renderGallery();
         return ok;
@@ -471,13 +484,21 @@ async function init() {
     function galleryMatches() {
         const q = $('gallerySearch').value.trim().toLowerCase();
         const all = galleryIndex || [];
-        return q ? all.filter((p) => p.slug.includes(q)) : all;
+        return q ? all.filter((p) => p.slug.includes(q) || p.name.toLowerCase().includes(q)) : all;
     }
 
     function renderGallery() {
         if (galleryIndex === null || !$('galleryPanel').classList.contains('open')) return;
         const matches = galleryMatches();
         $('galleryGrid').replaceChildren(...matches.slice(0, galleryShown).map(galleryCard));
+        if (!matches.length && $('gallerySearch').value.trim()) {
+            // The local index (petdex's sitemap) is not complete, and display
+            // names on the site often differ from the URL name we search by.
+            const hint = document.createElement('p');
+            hint.className = 'dim gallery-hint';
+            hint.textContent = 'No local match - the index doesn’t cover every pet, and site names can differ from URL names. Open the pet on petdex.dev and paste the last part of its page URL into the Adopt box above.';
+            $('galleryGrid').appendChild(hint);
+        }
         $('galleryMore').style.display = matches.length > galleryShown ? '' : 'none';
         pumpPreviews();
     }
@@ -497,6 +518,7 @@ async function init() {
                 previews.set(slug, r.error ? 'failed' : r.preview);
                 const live = document.querySelector(`#galleryGrid .pet-card[data-slug="${slug}"] .pet-card-pocket`);
                 if (live && !r.error) live.replaceChildren(animatedFace(r.preview.sheet, r.preview.frames, 1));
+                await new Promise((res) => setTimeout(res, 120)); // be a polite client
             }
         } finally {
             previewPump = false;
@@ -524,6 +546,123 @@ async function init() {
         }
         renderGallery();
     }
+
+    // -- Collections ("packs") browser: every curated petdex collection,
+    //    with a lazily-loaded strip of animated pet previews per card. --
+
+    let packsIndex = null;
+    let packsShown = 12;
+    const packDetails = new Map();  // slug -> {pets: [...]} | 'failed'
+    let packPump = false;
+
+    function packCard(entry) {
+        const card = document.createElement('div');
+        card.className = 'pack-card';
+        card.dataset.pack = entry.slug;
+        const strip = document.createElement('div');
+        strip.className = 'pack-strip';
+        const label = document.createElement('div');
+        label.className = 'pack-label';
+        const name = document.createElement('b');
+        name.textContent = entry.name;
+        const count = document.createElement('span');
+        count.className = 'dim pack-count';
+        label.append(name, count);
+        const install = document.createElement('button');
+        install.className = 'pet-card-adopt';
+        install.textContent = 'Install';
+        install.addEventListener('click', () =>
+            adoptPack({ slug: entry.slug, name: entry.name }, count, (busy) => { install.disabled = busy; }));
+        card.append(strip, label, install);
+        const detail = packDetails.get(entry.slug);
+        if (detail && detail !== 'failed') fillPackCard(card, detail);
+        return card;
+    }
+
+    function fillPackCard(card, detail) {
+        card.querySelector('.pack-count').textContent = `${detail.pets.length} pets`;
+        const strip = card.querySelector('.pack-strip');
+        if (strip.childElementCount) return;
+        for (const slug of detail.pets.slice(0, 5)) {
+            const pocket = document.createElement('div');
+            pocket.className = 'pet-card-pocket';
+            pocket.dataset.slug = slug;
+            const p = previews.get(slug);
+            if (p && p !== 'failed') pocket.appendChild(animatedFace(p.sheet, p.frames, 1));
+            strip.appendChild(pocket);
+        }
+    }
+
+    // Load pack contents + face previews for visible cards, one bridge
+    // call at a time (shares the `previews` cache with the pet gallery).
+    async function pumpPacks() {
+        if (packPump) return;
+        packPump = true;
+        try {
+            for (;;) {
+                const cards = [...document.querySelectorAll('#packsList .pack-card')];
+                const bare = cards.find((c) => !packDetails.has(c.dataset.pack));
+                if (bare) {
+                    const slug = bare.dataset.pack;
+                    const r = await pywebview.api.pack_pets(slug).catch(() => ({ error: 1 }));
+                    packDetails.set(slug, r.error ? 'failed' : { pets: r.pets });
+                    const live = document.querySelector(`#packsList .pack-card[data-pack="${slug}"]`);
+                    if (live && !r.error) fillPackCard(live, { pets: r.pets });
+                    else if (live) live.querySelector('.pack-count').textContent = 'unavailable';
+                    continue;
+                }
+                const pocket = [...document.querySelectorAll('#packsList .pet-card-pocket')]
+                    .find((el) => el.dataset.slug && !previews.has(el.dataset.slug));
+                if (!pocket) break;
+                const slug = pocket.dataset.slug;
+                const r = await pywebview.api.pet_preview(slug).catch(() => ({ error: 1 }));
+                previews.set(slug, r.error ? 'failed' : r.preview);
+                const live = document.querySelector(`#packsList .pet-card-pocket[data-slug="${slug}"]`);
+                if (live && !r.error) live.replaceChildren(animatedFace(r.preview.sheet, r.preview.frames, 1));
+                await new Promise((res) => setTimeout(res, 120)); // be a polite client
+            }
+        } finally {
+            packPump = false;
+        }
+    }
+
+    function renderPacks() {
+        if (packsIndex === null || !$('packsPanel').classList.contains('open')) return;
+        const q = $('packsSearch').value.trim().toLowerCase();
+        const matches = q ? packsIndex.filter((p) => p.slug.includes(q)) : packsIndex;
+        $('packsList').replaceChildren(...matches.slice(0, packsShown).map(packCard));
+        $('packsMore').style.display = matches.length > packsShown ? '' : 'none';
+        pumpPacks();
+    }
+
+    async function openPacks() {
+        const panel = $('packsPanel');
+        panel.classList.toggle('open');
+        $('packsToggle').textContent = panel.classList.contains('open')
+            ? 'hide collections' : 'browse collections…';
+        if (!panel.classList.contains('open')) return;
+        if (packsIndex === null) {
+            $('petStatus').textContent = 'Loading collections…';
+            const r = await pywebview.api.browse_packs().catch(() => ({ error: 'bridge error' }));
+            $('petStatus').textContent = '';
+            if (r.error) {
+                $('petError').textContent = r.error;
+                $('petError').classList.add('visible');
+                panel.classList.remove('open');
+                return;
+            }
+            // Featured packs first, then the rest alphabetically.
+            const featured = new Set((state.packs || []).map((p) => p.slug));
+            packsIndex = [...r.packs].sort((a, b) =>
+                (featured.has(b.slug) - featured.has(a.slug)) || a.slug.localeCompare(b.slug));
+            $('packsSearch').placeholder = `search ${packsIndex.length} collections…`;
+        }
+        renderPacks();
+    }
+
+    $('packsToggle').addEventListener('click', openPacks);
+    $('packsSearch').addEventListener('input', () => { packsShown = 12; renderPacks(); });
+    $('packsMore').addEventListener('click', () => { packsShown += 12; renderPacks(); });
 
     $('petInstallBtn').addEventListener('click', adoptPet);
     $('petSlug').addEventListener('keydown', (e) => { if (e.key === 'Enter') adoptPet(); });

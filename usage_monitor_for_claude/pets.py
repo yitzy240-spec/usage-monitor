@@ -28,7 +28,7 @@ import requests
 
 __all__ = [
     'install_pet', 'remove_pet', 'installed_pets', 'pets_payload', 'pets_rev',
-    'browse_pets', 'pet_preview', 'pack_pets', 'FEATURED_PACKS', 'PetError',
+    'browse_pets', 'browse_packs', 'pet_preview', 'pack_pets', 'FEATURED_PACKS', 'PetError',
 ]
 
 PETDEX_API = 'https://petdex.dev/api/install-pet/'
@@ -71,6 +71,16 @@ def _bump() -> None:
     global _rev, _payload_cache
     _rev += 1
     _payload_cache = None
+
+
+def _rate_limited(resp: Any) -> bool:
+    """petdex signals throttling as HTTP 429 or an {'error': 'rate_limited'} body."""
+    if resp.status_code == 429:
+        return True
+    try:
+        return resp.json().get('error') == 'rate_limited'
+    except ValueError:
+        return False
 
 
 def _asset_url_ok(url: str) -> bool:
@@ -164,12 +174,21 @@ def install_pet(slug: str) -> dict[str, Any]:
     if not _SLUG_RE.match(slug):
         raise PetError('Pet names are lowercase letters, digits and dashes.')
 
-    try:
-        resp = requests.get(PETDEX_API + slug, headers=_HEADERS, timeout=_TIMEOUT)
-    except requests.RequestException as exc:
-        raise PetError('Could not reach petdex.dev - check your connection.') from exc
+    import time
+    resp = None
+    for attempt in range(2):
+        try:
+            resp = requests.get(PETDEX_API + slug, headers=_HEADERS, timeout=_TIMEOUT)
+        except requests.RequestException as exc:
+            raise PetError('Could not reach petdex.dev - check your connection.') from exc
+        if _rate_limited(resp) and attempt == 0:
+            time.sleep(4)  # one polite retry - pack installs can trip the limiter
+            continue
+        break
     if resp.status_code == 404:
         raise PetError(f'No pet named "{slug}" on petdex.dev.')
+    if _rate_limited(resp):
+        raise PetError('petdex.dev is rate-limiting installs - wait a minute and try again.')
     if not resp.ok:
         raise PetError(f'petdex.dev answered {resp.status_code} - try again later.')
     try:
@@ -294,12 +313,14 @@ def _mtime(path: Path) -> float:
 # ---------------------------------------------------------------------------
 
 # petdex has no public list API; its sitemap enumerates every approved pet
-# (~3.7k as of 2026-07). One fetch a day is plenty for a browse index.
+# (~3.7k) and collection (~200) as of 2026-07. One fetch a day is plenty
+# for a browse index; pets and packs come from the same download.
 _SITEMAP_URL = 'https://petdex.dev/sitemap.xml'
 _MAX_SITEMAP_BYTES = 40_000_000
 _INDEX_TTL_SECONDS = 24 * 3600
 _INDEX_FILE = 'gallery-index.json'
 _SITEMAP_SLUG_RE = re.compile(r'petdex\.dev/pets/([a-z0-9][a-z0-9-]{0,62})<')
+_SITEMAP_PACK_RE = re.compile(r'petdex\.dev/collections/([a-z0-9][a-z0-9-]{0,62})<')
 
 # Every pet exposes a lightweight idle-row strip (cells 192x208) at a
 # guessable URL - browse cards animate from this without the full sheet.
@@ -310,15 +331,20 @@ _PREVIEW_CACHE_MAX = 200
 _preview_cache: dict[str, dict[str, Any]] = {}
 
 
-def browse_pets(force: bool = False) -> list[dict[str, Any]]:
-    """The full gallery as [{slug, name}], cached on disk for a day."""
+def _named(slugs: set[str]) -> list[dict[str, Any]]:
+    return [{'slug': s, 'name': s.replace('-', ' ').title()} for s in sorted(slugs)]
+
+
+def _load_index(force: bool = False) -> dict[str, Any]:
+    """{'pets': [...], 'packs': [...]} from the sitemap, disk-cached a day."""
     import time
     index_path = PETS_DIR / _INDEX_FILE
     if not force:
         try:
             if time.time() - index_path.stat().st_mtime < _INDEX_TTL_SECONDS:
                 cached = json.loads(index_path.read_text(encoding='utf-8'))
-                if isinstance(cached, list) and cached:
+                # Pre-1.10 caches were a bare pet list - treat as stale.
+                if isinstance(cached, dict) and cached.get('pets'):
                     return cached
         except (OSError, ValueError):
             pass
@@ -327,9 +353,14 @@ def browse_pets(force: bool = False) -> list[dict[str, Any]]:
         xml = _fetch(_SITEMAP_URL, _MAX_SITEMAP_BYTES).decode('utf-8', 'replace')
     except (requests.RequestException, PetError) as exc:
         raise PetError('Could not load the petdex gallery - check your connection.') from exc
-    slugs = sorted(set(_SITEMAP_SLUG_RE.findall(xml)))
-    index = [{'slug': s, 'name': s.replace('-', ' ').title()} for s in slugs]
-    if index:
+    # 'category-*' collections are auto-generated tag intersections
+    # (category-calm-cat, ...) - noise next to the curated packs.
+    packs = {s for s in _SITEMAP_PACK_RE.findall(xml) if not s.startswith('category-')}
+    index = {
+        'pets': _named(set(_SITEMAP_SLUG_RE.findall(xml))),
+        'packs': _named(packs),
+    }
+    if index['pets']:
         try:
             PETS_DIR.mkdir(parents=True, exist_ok=True)
             tmp = index_path.with_suffix('.tmp')
@@ -338,6 +369,16 @@ def browse_pets(force: bool = False) -> list[dict[str, Any]]:
         except OSError:
             pass
     return index
+
+
+def browse_pets(force: bool = False) -> list[dict[str, Any]]:
+    """The full pet gallery as [{slug, name}], cached on disk for a day."""
+    return _load_index(force)['pets']
+
+
+def browse_packs(force: bool = False) -> list[dict[str, Any]]:
+    """All curated collections ("packs") as [{slug, name}], same cache."""
+    return _load_index(force)['packs']
 
 
 def pet_preview(slug: str) -> dict[str, Any]:
@@ -401,4 +442,29 @@ def pack_pets(slug: str) -> list[str]:
     slugs = sorted(set(_PAGE_HREF_RE.findall(html)) | set(_PAGE_RSC_RE.findall(html)))
     if not slugs:
         raise PetError(f'No pets found in a pack named "{slug}".')
+    _augment_index(slugs)
     return slugs
+
+
+def _augment_index(slugs: list[str]) -> None:
+    """Merge newly-seen pet slugs into the cached gallery index.
+
+    The sitemap is not complete (franchise pets in particular can be
+    missing), so every pack fetch teaches the local index new pets.
+    """
+    index_path = PETS_DIR / _INDEX_FILE
+    try:
+        cached = json.loads(index_path.read_text(encoding='utf-8'))
+        if not isinstance(cached, dict) or 'pets' not in cached:
+            return
+        known = {p['slug'] for p in cached['pets']}
+        fresh = [s for s in slugs if s not in known]
+        if not fresh:
+            return
+        cached['pets'] = sorted(
+            cached['pets'] + _named(set(fresh)), key=lambda p: p['slug'])
+        tmp = index_path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(cached), encoding='utf-8')
+        os.replace(tmp, index_path)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # augmentation is best-effort; the sitemap refresh still wins

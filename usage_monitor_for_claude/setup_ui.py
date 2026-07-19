@@ -206,6 +206,16 @@ class _SetupApi:
         except Exception:
             return {'error': 'Loading that pack failed unexpectedly.'}
 
+    def browse_packs(self) -> dict[str, Any]:
+        """All curated petdex collections for the pack browser."""
+        from .pets import PetError, browse_packs
+        try:
+            return {'packs': browse_packs()}
+        except PetError as exc:
+            return {'error': str(exc)}
+        except Exception:
+            return {'error': 'Loading the collections failed unexpectedly.'}
+
     def check_hotkey(self, spec: str) -> bool:
         return parse_hotkey(str(spec)) is not None
 

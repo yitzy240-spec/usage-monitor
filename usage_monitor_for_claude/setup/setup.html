@@ -147,7 +147,13 @@
         <div class="pet-list" id="petList"></div>
         <small class="error" id="petError"></small>
         <small class="dim" id="petStatus"></small>
-        <button class="link" id="browseToggle">browse the full gallery…</button>
+        <button class="link" id="packsToggle">browse collections…</button>
+        <div id="packsPanel">
+            <input type="text" id="packsSearch" spellcheck="false" placeholder="search collections…">
+            <div class="pack-list" id="packsList"></div>
+            <div class="actions"><button id="packsMore">show more</button></div>
+        </div>
+        <button class="link" id="browseToggle">browse individual pets…</button>
         <div id="galleryPanel">
             <input type="text" id="gallerySearch" spellcheck="false" placeholder="search pets…">
             <div class="pet-grid" id="galleryGrid"></div>
