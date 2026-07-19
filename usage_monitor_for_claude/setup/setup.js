@@ -156,9 +156,10 @@ async function init() {
 
     showStep(state.mode === 'onboarding' ? 'stepWelcome' : 'stepAccounts');
     if (state.mode === 'settings') {
-        // Settings mode shows accounts + prefs + builder as one page.
+        // Settings mode shows accounts + prefs + builder + pets as one page.
         $('stepPrefs').classList.add('active');
         $('stepBuilder').classList.add('active');
+        $('stepPetdex').classList.add('active');
     }
 
     // Wiring
@@ -312,6 +313,91 @@ async function init() {
             $('spriteError').classList.add('visible');
         }
     });
+
+    // ---- Petdex pets ----
+
+    // Hand-picked original pets from the gallery for one-click adopting.
+    const FEATURED_PETS = ['blue-boba-axolotl', 'broom-witch', 'bun', 'brik', 'cantor-sprig'];
+    const PET_FRAME_W = 34, PET_FRAME_H = 37; // preview cell (192:208 ratio)
+
+    function petChip(pet) {
+        const chip = document.createElement('div');
+        chip.className = 'pet-chip';
+        const face = document.createElement('div');
+        face.className = 'pet-face';
+        face.style.width = `${PET_FRAME_W}px`;
+        face.style.height = `${PET_FRAME_H}px`;
+        face.style.backgroundImage = `url(${pet.sheet})`;
+        face.style.backgroundSize = `${PET_FRAME_W * 8}px ${PET_FRAME_H * 9}px`;
+        const idleFrames = (pet.rowFrames && pet.rowFrames[0]) || 6;
+        let frame = 0;
+        const tick = setInterval(() => {
+            if (!face.isConnected && frame > 0) { clearInterval(tick); return; }
+            frame = (frame + 1) % idleFrames;
+            face.style.backgroundPosition = `${-frame * PET_FRAME_W}px 0`;
+        }, 160);
+        const name = document.createElement('span');
+        name.textContent = pet.name;
+        chip.append(face, name);
+        if (pet.source === 'petdex') {
+            const x = document.createElement('button');
+            x.className = 'pet-remove';
+            x.textContent = '×';
+            x.title = 'Remove this pet';
+            x.addEventListener('click', async () => {
+                renderPets(await pywebview.api.remove_pet(pet.slug).catch(() => []));
+            });
+            chip.appendChild(x);
+        } else {
+            chip.title = 'Hatched by the Codex CLI (~/.codex/pets)';
+        }
+        return chip;
+    }
+
+    function renderPets(pets) {
+        $('petList').replaceChildren(...(pets || []).map(petChip));
+        // Featured picks hide once adopted.
+        const have = new Set((pets || []).map((p) => p.slug));
+        const chips = FEATURED_PETS.filter((slug) => !have.has(slug)).map((slug) => {
+            const b = document.createElement('button');
+            b.className = 'pet-featured-chip';
+            b.textContent = slug;
+            b.addEventListener('click', () => { $('petSlug').value = slug; adoptPet(); });
+            return b;
+        });
+        $('petFeatured').replaceChildren(...chips);
+    }
+
+    async function adoptPet() {
+        const slug = $('petSlug').value.trim();
+        if (!slug) return;
+        const err = $('petError');
+        err.classList.remove('visible');
+        $('petStatus').textContent = 'Adopting…';
+        $('petInstallBtn').disabled = true;
+        const result = await pywebview.api.install_pet(slug)
+            .catch(() => ({ error: 'bridge error' }));
+        $('petInstallBtn').disabled = false;
+        if (result.error) {
+            $('petStatus').textContent = '';
+            err.textContent = result.error;
+            err.classList.add('visible');
+            return;
+        }
+        $('petStatus').textContent = `${result.pet.name} adopted - it will drop by the HUD soon.`;
+        $('petSlug').value = '';
+        renderPets(result.pets);
+    }
+
+    $('petInstallBtn').addEventListener('click', adoptPet);
+    $('petSlug').addEventListener('keydown', (e) => { if (e.key === 'Enter') adoptPet(); });
+    $('petdexLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        pywebview.api.open_petdex();
+    });
+    if (state.mode === 'settings') {
+        pywebview.api.list_pets().then(renderPets).catch(() => {});
+    }
 
     // Poll account status while the window is open (a login can complete
     // in the terminal at any moment).

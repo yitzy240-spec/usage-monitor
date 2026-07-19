@@ -347,10 +347,73 @@ const hudLife = (() => {
         return el;
     }
 
+    // -- Petdex pets: full 8x9 spritesheet visitors with real animations --
+
+    let PETS = [];
+    let petsRev = null;
+
+    function syncPets(data) {
+        const rev = data && data.pets_rev;
+        if (!rev || rev === petsRev) return;
+        try {
+            pywebview.api.get_pets().then((pets) => {
+                PETS = pets || [];
+                petsRev = rev;
+            }).catch(() => {});
+        } catch (e) { /* bridge not ready - next payload retries */ }
+    }
+
+    // Row layout of the official Codex pet sheet (the states a roamer uses).
+    const PET_ROWS = { idle: 0, walk: 1, walkLeft: 2, wave: 3, jump: 4 };
+    const PET_W = 26, PET_H = 28; // one 192x208 cell at HUD scale
+
+    function petElement(pet) {
+        const el = document.createElement('div');
+        el.style.width = `${PET_W}px`;
+        el.style.height = `${PET_H}px`;
+        el.style.backgroundImage = `url(${pet.sheet})`;
+        el.style.backgroundSize = `${PET_W * 8}px ${PET_H * 9}px`;
+        el.style.backgroundRepeat = 'no-repeat';
+        el.style.imageRendering = 'auto'; // hi-res art downscaled, not pixel art
+        const frames = pet.rowFrames || [6, 8, 8, 4, 5, 8, 8, 8, 6];
+        let anim = 'idle', frame = 0, oneshotUntil = 0;
+        const paint = () => {
+            el.style.backgroundPosition = `${-frame * PET_W}px ${-(PET_ROWS[anim] || 0) * PET_H}px`;
+        };
+        el._setAnim = (name, holdMs) => {
+            if (!(name in PET_ROWS)) name = 'idle';
+            if (holdMs) oneshotUntil = performance.now() + holdMs;
+            else if (performance.now() < oneshotUntil) return; // one-shot (wave) plays out
+            if (name === anim) return;
+            anim = name;
+            frame = 0;
+            paint();
+        };
+        // Generic visitor hooks: pets greet with their real wave row.
+        el._hasFrame = (name) => name === 'wave';
+        el._setFrame = (name) => { if (name === 'wave') el._setAnim('wave', 1100); };
+        el._noFlip = true; // native left-facing rows - never mirror
+        let connected = false;
+        const tick = setInterval(() => {
+            if (el.isConnected) connected = true;
+            else if (connected) { clearInterval(tick); return; }
+            if (anim === 'wave' && performance.now() >= oneshotUntil) { anim = 'idle'; frame = 0; }
+            frame = (frame + 1) % (frames[PET_ROWS[anim] || 0] || 1);
+            paint();
+        }, 140);
+        paint();
+        return el;
+    }
+
     // True for critters that hover instead of obeying gravity.
     const FLOATY = /bat|butterfly|jelly|eyeball|orb|ghost/;
 
     function pickVisitor() {
+        // Installed pets are the stars of the show when any exist.
+        if (PETS.length && Math.random() < 0.55) {
+            const pet = PETS[Math.floor(Math.random() * PETS.length)];
+            return { kind: 'pet', pet, floats: false };
+        }
         const custom = (lastData && lastData.visitors) || [];
         const grids = (lastData && lastData.visitor_grids) || [];
         const pack = (lastData && lastData.visitors_pack) || [];
@@ -418,6 +481,7 @@ const hudLife = (() => {
         const pick = pickVisitor();
         const content = pick.kind === 'img'
             ? Object.assign(document.createElement('img'), { src: pick.src })
+            : pick.kind === 'pet' ? petElement(pick.pet)
             : gridElement(pick.grid);
         if (pick.kind === 'img') content.style.height = '24px';
         const el = document.createElement('div');
@@ -487,7 +551,16 @@ const hudLife = (() => {
         }
 
         function render() {
-            el.style.transform = `translate(${x - w / 2}px, ${y}px) scaleX(${vx < 0 ? -1 : 1})`;
+            const flip = content._noFlip ? 1 : (vx < 0 ? -1 : 1);
+            el.style.transform = `translate(${x - w / 2}px, ${y}px) scaleX(${flip})`;
+        }
+
+        // Sheet-animated pets act out what the physics is doing to them.
+        function syncAnim() {
+            if (!content._setAnim) return;
+            if (mode === 'walk' || (mode === 'leave' && !pick.floats)) content._setAnim(vx < 0 ? 'walkLeft' : 'walk');
+            else if (mode === 'drop' || mode === 'climb') content._setAnim('jump');
+            else content._setAnim('idle'); // peek / pause / greet
         }
 
         function residentsNotice() {
@@ -595,6 +668,7 @@ const hudLife = (() => {
                 x += vx * dt;
             }
 
+            syncAnim();
             residentsNotice();
             render();
 
@@ -674,6 +748,7 @@ const hudLife = (() => {
         onData(data, prev) {
             refreshBaselines(data);
             detectEvents(data, prev);
+            syncPets(data);
         },
 
         onShown() {

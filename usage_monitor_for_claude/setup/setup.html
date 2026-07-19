@@ -117,6 +117,23 @@
         <small class="dim" id="spriteStatus"></small>
     </section>
 
+    <!-- Petdex pets (settings mode) -->
+    <section class="step settings-only" id="stepPetdex">
+        <h1>Petdex pets</h1>
+        <p class="dim">Adopt animated companions from the community gallery at
+            <a href="#" id="petdexLink">petdex.dev</a> - they drop by the HUD with
+            their real walk, wave and jump animations. Pets hatched by the Codex
+            CLI join the visits automatically.</p>
+        <div class="oauth-code-line">
+            <input type="text" id="petSlug" spellcheck="false" placeholder="pet name, e.g. broom-witch">
+            <button class="primary" id="petInstallBtn">Adopt</button>
+        </div>
+        <div class="pet-featured" id="petFeatured"></div>
+        <div class="pet-list" id="petList"></div>
+        <small class="error" id="petError"></small>
+        <small class="dim" id="petStatus"></small>
+    </section>
+
     <!-- Onboarding: done -->
     <section class="step" id="stepDone">
         <h1>You're set ✨</h1>

@@ -212,6 +212,17 @@ def _visitor_data_uris() -> list[str]:
     return uris
 
 
+def _pets_rev() -> int:
+    """Petdex-pet revision stamp; the sheets themselves travel over the JS
+    bridge (get_pets) only when this changes - they are far too big to ride
+    along in every refresh payload."""
+    try:
+        from .pets import pets_rev
+        return pets_rev()
+    except Exception:
+        return 0
+
+
 def _provider_payload(usage: dict[str, Any] | None, login_hint: str) -> dict[str, Any]:
     """Build one provider block (bars + error text) for the HUD JS."""
     from .popup import _usage_bar_list
@@ -311,6 +322,7 @@ class UsageHud:
             'visitors_pack': _visitor_pack(),
             'visitor_grids': _visitor_grids(),
             'visitors_enabled': HUD_VISITORS,
+            'pets_rev': _pets_rev(),
         }
 
     # Window
@@ -814,6 +826,14 @@ class _HudApi:
 
     def open_settings(self) -> None:
         self._hud.app.on_open_setup()
+
+    def get_pets(self) -> list[dict[str, Any]]:
+        """Installed petdex/Codex pets (small-sheet data URIs) for visitors."""
+        try:
+            from .pets import pets_payload
+            return pets_payload()
+        except Exception:
+            return []
 
     def close(self) -> None:
         self._hud.hide()

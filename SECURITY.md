@@ -46,6 +46,7 @@ stored, or transmitted.
 | `auth.openai.com/oauth/token` | Codex token refresh (only after a 401) |
 | `api.anthropic.com/v1/messages` | Sprite Builder only: user-initiated, one small request per drawing, on the user's own subscription |
 | `api.github.com/repos/.../releases/latest` + the release asset URLs | in-app update check (every 6h) and user-initiated update download |
+| `petdex.dev/api/install-pet/{slug}` + `assets.petdex.dev` | Petdex pets only: user-initiated adopt in Settings; asset downloads are refused unless hosted on petdex's own allowlisted CDN, size-capped, and validated as a real 8x9 spritesheet before anything is written |
 
 **In-app updates:** the tray menu's update action downloads the newest
 release EXE and installs it **only after its SHA256 matches the release's
@@ -85,6 +86,11 @@ anyway). The Codex companion spritesheet is OpenAI's own published pet
 asset; Clawd is the MIT-licensed ClawdMoji recreation of the Claude Code
 logo. No other third-party characters are bundled; anything users drop
 into their local `visitors/` folder is their own responsibility.
+
+Petdex pets are **not bundled** - they are community submissions downloaded
+from [petdex.dev](https://petdex.dev) (MIT-licensed project) only when the
+user adopts one by name. Content moderation and takedowns for gallery pets
+are handled by petdex ([petdex.dev/legal/takedown](https://petdex.dev/legal/takedown)).
 
 ## Reporting
 

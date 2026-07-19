@@ -141,6 +141,33 @@ class _SetupApi:
         from .sprite_builder import save_sprite
         return save_sprite(grid)
 
+    # Petdex pets - adopt gallery companions as HUD visitors
+
+    def install_pet(self, slug: str) -> dict[str, Any]:
+        from .pets import PetError, install_pet
+        try:
+            meta = install_pet(str(slug))
+        except PetError as exc:
+            return {'error': str(exc)}
+        except Exception:
+            return {'error': 'Installing the pet failed unexpectedly.'}
+        return {'pet': meta, 'pets': self.list_pets()}
+
+    def remove_pet(self, slug: str) -> list[dict[str, Any]]:
+        from .pets import remove_pet
+        remove_pet(str(slug))
+        return self.list_pets()
+
+    def list_pets(self) -> list[dict[str, Any]]:
+        from .pets import pets_payload
+        try:
+            return pets_payload()
+        except Exception:
+            return []
+
+    def open_petdex(self) -> None:
+        webbrowser.open('https://petdex.dev')
+
     def check_hotkey(self, spec: str) -> bool:
         return parse_hotkey(str(spec)) is not None
 
