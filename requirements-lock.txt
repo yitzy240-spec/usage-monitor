@@ -1,4 +1,4 @@
-﻿altgraph==0.17.5
+altgraph==0.17.5
 bottle==0.13.4
 certifi==2026.6.17
 cffi==2.1.0
@@ -25,4 +25,4 @@ requests==2.34.2
 setuptools==83.0.0
 six==1.17.0
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
