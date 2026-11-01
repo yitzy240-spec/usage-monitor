@@ -1,4 +1,4 @@
-﻿altgraph==0.17.5
+altgraph==0.17.5
 bottle==0.13.4
 certifi==2026.6.17
 cffi==2.1.0
@@ -12,7 +12,7 @@ pefile==2024.8.26
 pillow==12.3.0
 pluggy==1.6.0
 proxy_tools==0.1.0
-pycparser==3.0
+pycparser==3.12
 Pygments==2.20.0
 pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
