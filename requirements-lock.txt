@@ -1,4 +1,4 @@
-﻿altgraph==0.17.5
+altgraph==0.17.5
 bottle==0.13.4
 certifi==2026.6.17
 cffi==2.1.0
@@ -9,7 +9,7 @@ idna==3.18
 iniconfig==2.3.0
 packaging==26.2
 pefile==2024.8.26
-pillow==12.3.0
+pillow==13.0.0
 pluggy==1.6.0
 proxy_tools==0.1.0
 pycparser==3.0
